@@ -15,11 +15,11 @@ async function api(path, opts = {}) {
   return { data, error: null };
 }
 
-const CATS = { maquillaje: "Maquillaje", joyas: "Joyas" };
+let CATS = {}; // slug → nombre; se llena desde /api/admin/categories
 const EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 const MAX_IMAGE = 50 * 1024 * 1024;
 const TZ = { timeZone: "America/Bogota" };
-let me = null, products = [], subs = [], orders = [], expenses = [], settings = {}, editing = null;
+let me = null, categories = [], editingCat = null, products = [], subs = [], orders = [], expenses = [], settings = {}, editing = null;
 
 function toast(t) {
   const el = $("toast");
@@ -28,6 +28,8 @@ function toast(t) {
   toast.id = setTimeout(() => (el.hidden = true), 3000);
 }
 const setMsg = (el, t, state = "info") => { el.textContent = t; el.dataset.state = state; };
+const ACCENT_NAMES = { rose: "Rosa", champagne: "Champagne", plum: "Ciruela" };
+const accentOf = (slug) => (categories.find((c) => c.slug === slug) || {}).accent || "rose";
 const isUrl = (u) => /^https?:\/\//.test(u || "");
 
 // ---------- Pestañas ----------
@@ -109,6 +111,7 @@ async function enter(name) {
 }
 
 async function loadAll() {
+  await loadCategories();
   await Promise.all([loadOrders(), loadProducts(), loadSubs(), loadExpenses(), loadSettings()]);
   $("last-updated").textContent = "Actualizado " + new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
 }
@@ -252,11 +255,145 @@ function renderEarnings() {
   $("earn-cats").innerHTML = entries.length ? entries.map(([k, v]) => `
     <div class="bar-row">
       <span>${esc(CATS[k] || "Otros")}</span>
-      <div class="bar"><i class="bar-${esc(k)}" style="width:${total ? Math.max(3, Math.round((v / total) * 100)) : 0}%"></i></div>
+      <div class="bar"><i class="bar-${accentOf(k)}" style="width:${total ? Math.max(3, Math.round((v / total) * 100)) : 0}%"></i></div>
       <strong>${money(v)}</strong>
     </div>`).join("") : `<p class="empty">Todavía no hay pedidos entregados en este periodo.</p>`;
 }
 $("earn-period").addEventListener("change", renderEarnings);
+
+// =====================================================================
+// CATEGORÍAS (menú principal)
+// =====================================================================
+async function loadCategories(rerender = false) {
+  const { data, error } = await api("admin/categories");
+  if (error) return setMsg($("cat-message"), "No se pudieron cargar las categorías.", "error");
+  categories = data;
+  CATS = Object.fromEntries(categories.map((c) => [c.slug, c.name]));
+  fillCategorySelects();
+  renderCategories();
+  if (rerender) { renderProducts(); renderSubs(); renderOrders(); renderEarnings(); renderExpenses(); refreshSale(); }
+}
+
+function fillCategorySelects() {
+  const opts = categories.map((c) => `<option value="${esc(c.slug)}">${esc(c.name)}${c.active ? "" : " (oculta)"}</option>`).join("");
+  const fill = (id, first) => {
+    const el = $(id), cur = el.value;
+    el.innerHTML = first + opts;
+    if ([...el.options].some((o) => o.value === cur)) el.value = cur;
+  };
+  fill("p-category", "");
+  fill("sub-category", "");
+  fill("filter-category", `<option value="all">Todas</option>`);
+  fill("e-category", `<option value="">General</option>`);
+  fillSubSelect();
+}
+
+function renderCategories() {
+  const n = (slug) => products.filter((p) => p.category === slug).length;
+  $("cats-list").innerHTML = categories.length ? categories.map((c, i) => `
+    <div class="sub-row${c.active ? "" : " is-hidden"}">
+      <div>
+        <strong class="cat-${esc(c.accent)}">${esc(c.name)}</strong>
+        <span class="sub-meta">${n(c.slug)} producto${n(c.slug) === 1 ? "" : "s"} · ${ACCENT_NAMES[c.accent] || "Rosa"} · ${c.active ? "Visible en el menú principal" : "Oculta"}</span>
+      </div>
+      <div class="row-actions">
+        <button type="button" data-act="up" data-slug="${esc(c.slug)}"${i === 0 ? " disabled" : ""} aria-label="Subir">↑</button>
+        <button type="button" data-act="down" data-slug="${esc(c.slug)}"${i === categories.length - 1 ? " disabled" : ""} aria-label="Bajar">↓</button>
+        <button type="button" data-act="edit" data-slug="${esc(c.slug)}">Editar</button>
+        <button type="button" data-act="toggle" data-slug="${esc(c.slug)}">${c.active ? "Ocultar" : "Mostrar"}</button>
+        <button type="button" class="danger" data-act="delete" data-slug="${esc(c.slug)}">Eliminar</button>
+      </div>
+    </div>`).join("") : `<p class="muted small">Todavía no hay categorías. Crea la primera arriba.</p>`;
+}
+
+function resetCatForm() {
+  $("cat-form").reset();
+  editingCat = null;
+  $("cat-form-title").textContent = "Categorías";
+  $("cat-save").textContent = "Crear categoría";
+  $("cat-cancel").hidden = true;
+}
+
+$("cat-cancel").addEventListener("click", () => { resetCatForm(); setMsg($("cat-message"), ""); });
+
+$("cat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const m = $("cat-message"), btn = $("cat-save");
+  const name = $("c-name").value.trim();
+  if (name.length < 2) return setMsg(m, "El nombre debe tener al menos 2 caracteres.", "error");
+  if (categories.some((c) => (!editingCat || c.slug !== editingCat.slug) && c.name.toLowerCase() === name.toLowerCase()))
+    return setMsg(m, `Ya existe una categoría llamada "${name}".`, "error");
+  const body = JSON.stringify({
+    name, description: $("c-description").value.trim(),
+    accent: $("c-accent").value, variant_label: $("c-variant").value.trim() || "Opción",
+  });
+  btn.disabled = true;
+  setMsg(m, "Guardando...");
+  const { error } = editingCat
+    ? await api("admin/categories/" + editingCat.slug, { method: "PATCH", body })
+    : await api("admin/categories", { method: "POST", body });
+  btn.disabled = false;
+  if (error) return setMsg(m, "No se pudo guardar la categoría.", "error");
+  const wasEditing = !!editingCat;
+  resetCatForm();
+  setMsg(m, wasEditing ? "Categoría actualizada." : `Categoría "${name}" creada. Ya aparece en la portada.`, "success");
+  toast(wasEditing ? "Categoría actualizada." : "Categoría creada.");
+  loadCategories(true);
+});
+
+async function moveCategory(c, dir) {
+  const i = categories.findIndex((x) => x.slug === c.slug), j = i + dir;
+  if (j < 0 || j >= categories.length) return;
+  const list = [...categories];
+  [list[i], list[j]] = [list[j], list[i]];
+  const changes = list.map((x, idx) => ({ slug: x.slug, sort_order: idx + 1 }))
+    .filter((ch) => categories.find((x) => x.slug === ch.slug).sort_order !== ch.sort_order);
+  const results = await Promise.all(changes.map((ch) => api("admin/categories/" + ch.slug, { method: "PATCH", body: JSON.stringify({ sort_order: ch.sort_order }) })));
+  if (results.some((r) => r.error)) toast("No se pudo cambiar el orden.");
+  loadCategories();
+}
+
+$("cats-list").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const c = categories.find((x) => x.slug === btn.dataset.slug);
+  if (!c) return;
+  const act = btn.dataset.act;
+  if (act === "up" || act === "down") { btn.disabled = true; return moveCategory(c, act === "up" ? -1 : 1); }
+  if (act === "edit") {
+    editingCat = c;
+    $("c-name").value = c.name;
+    $("c-description").value = c.description || "";
+    $("c-accent").value = c.accent;
+    $("c-variant").value = c.variant_label || "Opción";
+    $("cat-form-title").textContent = `Editando: ${c.name}`;
+    $("cat-save").textContent = "Guardar cambios";
+    $("cat-cancel").hidden = false;
+    setMsg($("cat-message"), "");
+    $("c-name").focus();
+    return window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  btn.disabled = true;
+  if (act === "toggle") {
+    const { error } = await api("admin/categories/" + c.slug, { method: "PATCH", body: JSON.stringify({ active: !c.active }) });
+    if (error) { toast("No se pudo actualizar."); btn.disabled = false; return; }
+    toast(c.active ? "Categoría oculta de la portada." : "Categoría visible en la portada.");
+    return loadCategories(true);
+  }
+  const n = products.filter((p) => p.category === c.slug).length;
+  if (n) {
+    toast(`"${c.name}" tiene ${n} producto${n === 1 ? "" : "s"}. Muévelos a otra categoría o elimínalos primero, o usa Ocultar.`);
+    btn.disabled = false;
+    return;
+  }
+  if (!confirm(`¿Eliminar la categoría "${c.name}"? También se borran sus subsecciones. No se puede deshacer.`)) { btn.disabled = false; return; }
+  const { error } = await api("admin/categories/" + c.slug, { method: "DELETE" });
+  if (error) { toast(error.message === "has_products" ? "Esa categoría todavía tiene productos." : "No se pudo eliminar."); btn.disabled = false; return; }
+  toast("Categoría eliminada.");
+  if (editingCat && editingCat.slug === c.slug) resetCatForm();
+  loadCategories(true);
+  loadSubs();
+});
 
 // =====================================================================
 // SUBSECCIONES
@@ -304,7 +441,7 @@ function renderSubs() {
       </div>`;
     }).join("");
     return `<div class="sub-group">
-      <h3 class="sub cat-${k}">${esc(label)}</h3>
+      <h3 class="sub cat-${accentOf(k)}">${esc(label)}</h3>
       ${rows || `<p class="muted small">Todavía no hay subsecciones en ${esc(label)}.</p>`}
     </div>`;
   }).join("");
@@ -393,6 +530,7 @@ async function loadProducts() {
   products.forEach((p) => p.product_variants.sort((a, b) => a.id - b.id));
   renderProducts();
   renderSubs();
+  renderCategories();
   refreshSale();
 }
 
@@ -428,7 +566,7 @@ function row(p) {
     : `<span class="thumb">${INITIALS}</span>`;
   return `<tr>
     <td><div class="product-cell">${img}<div><strong>${esc(p.name)}</strong><span>${esc(p.description)}</span>${variantsLine(p)}</div></div></td>
-    <td><span class="badge cat-${esc(p.category)}">${esc(CATS[p.category] || p.category)}</span>${subName(p.subcategory_id) ? `<span class="stock-note muted">${esc(subName(p.subcategory_id))}</span>` : ""}</td>
+    <td><span class="badge cat-${accentOf(p.category)}">${esc(CATS[p.category] || p.category)}</span>${subName(p.subcategory_id) ? `<span class="stock-note muted">${esc(subName(p.subcategory_id))}</span>` : ""}</td>
     <td>${money(p.price)}</td>
     <td>${stockCell(p)}</td>
     <td><span class="badge ${p.active ? "on" : "off"}">${p.active ? "Visible" : "Oculto"}</span></td>
@@ -441,14 +579,17 @@ function row(p) {
 }
 
 function renderProducts() {
-  const count = (c) => products.filter((p) => p.category === c).length;
-  $("stat-total").textContent = products.length;
-  Object.keys(CATS).forEach((k) => { const el = $("stat-" + k); if (el) el.textContent = count(k); });
-  $("stat-hidden").textContent = products.filter((p) => !p.active).length;
-  $("stat-soldout").textContent = products.reduce((t, p) => {
+  const soldout = products.reduce((t, p) => {
     const vs = (p.product_variants || []).filter((v) => v.active);
     return t + (vs.length ? vs.filter((v) => v.stock === 0).length : (p.stock === 0 ? 1 : 0));
   }, 0);
+  const tone = { rose: "s-rose", champagne: "s-champagne", plum: "s-plum" };
+  $("inv-stats").innerHTML = [
+    ["", "Total", products.length],
+    ...categories.map((c) => [tone[c.accent] || "", c.name, products.filter((p) => p.category === c.slug).length]),
+    ["", "Ocultos", products.filter((p) => !p.active).length],
+    ["", "Agotados", soldout],
+  ].map(([cls, label, n]) => `<article class="stat ${cls}"><span>${esc(label)}</span><strong>${n}</strong></article>`).join("");
 
   const q = $("search").value.trim().toLowerCase(), c = $("filter-category").value;
   const rows = products.filter((p) => (c === "all" || p.category === c) && (!q || p.name.toLowerCase().includes(q)));
@@ -574,6 +715,7 @@ $("product-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const fm = $("form-message"), btn = $("save-button");
   const name = $("p-name").value.trim(), desc = $("p-description").value.trim(), price = Number($("p-price").value);
+  if (!$("p-category").value) return setMsg(fm, "Primero crea una categoría en Productos › Categorías.", "error");
   if (name.length < 2) return setMsg(fm, "El nombre debe tener al menos 2 caracteres.", "error");
   if ($("p-price").value === "" || !Number.isInteger(price) || price < 0) return setMsg(fm, "El precio debe ser un número entero, sin decimales.", "error");
   let variants;
@@ -813,7 +955,7 @@ function renderExpenses() {
   $("expenses-body").innerHTML = rows.map((e) => `<tr>
     <td>${expenseDate(e).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })}</td>
     <td>${esc(e.description)}</td>
-    <td>${e.category ? `<span class="badge cat-${esc(e.category)}">${esc(CATS[e.category] || e.category)}</span>` : `<span class="muted small">General</span>`}</td>
+    <td>${e.category ? `<span class="badge cat-${accentOf(e.category)}">${esc(CATS[e.category] || e.category)}</span>` : `<span class="muted small">General</span>`}</td>
     <td>${money(e.amount)}</td>
     <td><div class="row-actions"><button type="button" class="danger" data-id="${e.id}">Eliminar</button></div></td>
   </tr>`).join("");
@@ -855,7 +997,7 @@ $("exp-period").addEventListener("change", renderExpenses);
 // =====================================================================
 // PERSONALIZACIÓN
 // =====================================================================
-const DEFAULTS = {"hero_title_1": "Pensado para ellas,", "hero_title_2": "hecho para brillar.", "hero_text": "Maquillaje y joyas seleccionados con cariño para realzar tu belleza y tu estilo, todos los días.", "maquillaje_title": "Maquillaje", "maquillaje_text": "Color, brillo y cuidado para cada look. Labiales, sombras, bases y todo lo que necesitas para sentirte increíble, del día a día a las ocasiones especiales.", "joyas_title": "Joyas", "joyas_text": "Detalles que hacen la diferencia. Aretes, collares, pulseras y accesorios delicados para completar tu estilo con un toque de brillo.", "visit_text": "Escríbenos por WhatsApp para consultar disponibilidad, precios y envíos."};
+const DEFAULTS = {"hero_title_1": "Pensado para ellas,", "hero_title_2": "hecho para brillar.", "hero_text": "Maquillaje y joyas seleccionados con cariño para realzar tu belleza y tu estilo, todos los días.", "visit_text": "Escríbenos por WhatsApp para consultar disponibilidad, precios y envíos."};
 DEFAULTS.whatsapp = WHATSAPP;
 DEFAULTS.color_rose = "#b44a6e";
 DEFAULTS.color_champagne = "#96692b";

@@ -212,3 +212,9 @@ input[type="color"] { height: 46px; padding: 4px; cursor: pointer; }
 .row-actions button:disabled { opacity: .35; cursor: not-allowed; }
 .row-actions button:disabled:hover { border-color: var(--line); color: var(--text); }
 @media (max-width: 800px) { .sub-form { grid-template-columns: 1fr; } }
+
+/* ---------- Categorías dinámicas ---------- */
+.cat-rose { color: var(--rose-2); } .cat-champagne { color: var(--champagne); } .cat-plum { color: var(--plum); }
+.bar .bar-rose { background: var(--rose); } .bar .bar-champagne { background: var(--champagne); } .bar .bar-plum { background: var(--plum); }
+.stats.auto { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+#cats-list { margin-top: 20px; }

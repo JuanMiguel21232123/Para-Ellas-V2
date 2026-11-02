@@ -73,6 +73,7 @@
         <nav class="subtabs" role="tablist" aria-label="Productos" data-section="productos" hidden>
           <button class="sub-tab" role="tab" data-tab="inventario" aria-selected="false">Inventario</button>
           <button class="sub-tab" role="tab" data-tab="agregar" aria-selected="false" id="tab-btn-agregar">Agregar producto</button>
+          <button class="sub-tab" role="tab" data-tab="categorias" aria-selected="false">Categorías</button>
           <button class="sub-tab" role="tab" data-tab="subsecciones" aria-selected="false">Subsecciones</button>
         </nav>
         <nav class="subtabs single" role="tablist" aria-label="Mi tienda" data-section="tienda" hidden>
@@ -201,8 +202,6 @@
               <label for="e-category">Categoría (opcional)</label>
               <select id="e-category">
                 <option value="">General</option>
-                <option value="maquillaje">Maquillaje</option>
-                <option value="joyas">Joyas</option>
               </select>
             </div>
             <div class="form-actions" style="align-self:end">
@@ -234,10 +233,7 @@
           <form id="product-form" class="product-form" novalidate>
             <div class="field">
               <label for="p-category">Categoría</label>
-              <select id="p-category" required>
-                <option value="maquillaje">Maquillaje</option>
-                <option value="joyas">Joyas</option>
-              </select>
+              <select id="p-category" required></select>
             </div>
             <div class="field">
               <label for="p-price">Precio (COP)</label>
@@ -294,6 +290,46 @@
         </div>
       </section>
 
+      <!-- CATEGORÍAS -->
+      <section id="tab-categorias" class="tab-panel" role="tabpanel" hidden>
+        <div class="card panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">MENÚ PRINCIPAL</p><h2 id="cat-form-title">Categorías</h2></div>
+          </div>
+          <p class="muted small">Cada categoría aparece como una colección en la página principal y tiene su propia página con sus productos (y subsecciones). Al crearla ya puedes elegirla al agregar productos. El orden de esta lista es el orden en la portada.</p>
+          <form id="cat-form" class="product-form" novalidate>
+            <div class="field">
+              <label for="c-name">Nombre</label>
+              <input id="c-name" type="text" maxlength="40" placeholder="Ej. Ropa" required>
+            </div>
+            <div class="field">
+              <label for="c-accent">Color de la colección</label>
+              <select id="c-accent">
+                <option value="rose">Rosa</option>
+                <option value="champagne">Champagne</option>
+                <option value="plum">Ciruela</option>
+              </select>
+            </div>
+            <div class="field wide">
+              <label for="c-description">Descripción (se ve en la portada y en la página de la colección)</label>
+              <textarea id="c-description" rows="3" maxlength="400"></textarea>
+            </div>
+            <div class="field wide">
+              <label for="c-variant">Cómo se llaman sus variantes</label>
+              <input id="c-variant" type="text" maxlength="30" list="c-variant-options" value="Opción">
+              <datalist id="c-variant-options"><option value="Tono"><option value="Modelo"><option value="Talla"><option value="Color"><option value="Opción"></datalist>
+              <p class="muted small">Es la etiqueta del selector en la tienda (ej. "Talla" en ropa, "Tono" en maquillaje).</p>
+            </div>
+            <div class="form-actions wide">
+              <button id="cat-save" class="btn solid" type="submit">Crear categoría</button>
+              <button id="cat-cancel" class="btn" type="button" hidden>Cancelar edición</button>
+            </div>
+            <p id="cat-message" class="msg wide" role="status" aria-live="polite"></p>
+          </form>
+          <div id="cats-list"></div>
+        </div>
+      </section>
+
       <!-- SUBSECCIONES -->
       <section id="tab-subsecciones" class="tab-panel" role="tabpanel" hidden>
         <div class="card panel">
@@ -304,10 +340,7 @@
           <form id="sub-form" class="sub-form" novalidate>
             <div class="field">
               <label for="sub-category">Colección</label>
-              <select id="sub-category">
-                <option value="maquillaje">Maquillaje</option>
-                <option value="joyas">Joyas</option>
-              </select>
+              <select id="sub-category"></select>
             </div>
             <div class="field">
               <label for="sub-name">Nombre de la subsección</label>
@@ -322,13 +355,7 @@
 
       <!-- INVENTARIO -->
       <section id="tab-inventario" class="tab-panel" role="tabpanel" hidden>
-        <div class="stats five">
-          <article class="stat"><span>Total</span><strong id="stat-total">0</strong></article>
-          <article class="stat s-rose"><span>Maquillaje</span><strong id="stat-maquillaje">0</strong></article>
-          <article class="stat s-champagne"><span>Joyas</span><strong id="stat-joyas">0</strong></article>
-          <article class="stat"><span>Ocultos</span><strong id="stat-hidden">0</strong></article>
-          <article class="stat"><span>Agotados</span><strong id="stat-soldout">0</strong></article>
-        </div>
+        <div id="inv-stats" class="stats auto"></div>
         <div class="card panel">
           <div class="panel-head">
             <div><p class="eyebrow">CATÁLOGO</p><h2>Todos los productos</h2></div>
@@ -342,8 +369,6 @@
               <label for="filter-category">Categoría</label>
               <select id="filter-category">
                 <option value="all">Todas</option>
-                <option value="maquillaje">Maquillaje</option>
-                <option value="joyas">Joyas</option>
               </select>
             </div>
           </div>
@@ -365,25 +390,13 @@
           <div class="panel-head">
             <div><p class="eyebrow">TU PÁGINA</p><h2>Personalización</h2></div>
           </div>
-          <p class="muted small">Cambia los textos y colores de la tienda. Si dejas un campo vacío, se usa el texto original.</p>
+          <p class="muted small">Cambia los textos y colores de la tienda. Si dejas un campo vacío, se usa el texto original. El nombre y la descripción de cada colección se editan en Productos › Categorías.</p>
 
           <fieldset>
             <legend>Portada</legend>
             <div class="field"><label for="s-hero_title_1">Título, primera línea</label><input id="s-hero_title_1" type="text" maxlength="60"></div>
             <div class="field"><label for="s-hero_title_2">Título, segunda línea (en rosa)</label><input id="s-hero_title_2" type="text" maxlength="60"></div>
             <div class="field"><label for="s-hero_text">Texto de presentación</label><textarea id="s-hero_text" rows="2" maxlength="300"></textarea></div>
-          </fieldset>
-
-          <fieldset>
-            <legend>Bloque 1 · Maquillaje</legend>
-            <div class="field"><label for="s-maquillaje_title">Título</label><input id="s-maquillaje_title" type="text" maxlength="40"></div>
-            <div class="field"><label for="s-maquillaje_text">Descripción</label><textarea id="s-maquillaje_text" rows="4" maxlength="400"></textarea></div>
-          </fieldset>
-
-          <fieldset>
-            <legend>Bloque 2 · Joyas</legend>
-            <div class="field"><label for="s-joyas_title">Título</label><input id="s-joyas_title" type="text" maxlength="40"></div>
-            <div class="field"><label for="s-joyas_text">Descripción</label><textarea id="s-joyas_text" rows="4" maxlength="400"></textarea></div>
           </fieldset>
 
           <fieldset>

@@ -48,7 +48,7 @@ h1 span.plain { color: inherit; }
 .hero .btn + .btn { margin-left: 12px; }
 
 /* Colecciones */
-.blocks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding-bottom: 90px; }
+.blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; padding-bottom: 90px; }
 .block { --accent: var(--rose); position: relative; overflow: hidden; display: flex; flex-direction: column; padding: 40px 32px 32px; min-height: 340px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); transition: transform .3s, box-shadow .3s, border-color .3s; cursor: pointer; text-align: left; color: inherit; font: inherit; }
 .block::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--accent); }
 .block::after { content: ""; position: absolute; right: -70px; top: -70px; width: 200px; height: 200px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 12%, transparent); transition: transform .4s; }

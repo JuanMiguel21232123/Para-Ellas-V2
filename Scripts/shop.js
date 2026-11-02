@@ -17,19 +17,17 @@ async function api(path, opts = {}) {
   return { data, error: null };
 }
 
-// Textos originales de cada categoría (el admin puede cambiarlos desde Personalización)
-const CATEGORIES = {
-  maquillaje: {
-    num: "01", accent: "green", variant: "Tono",
-    title: "Maquillaje",
-    text: "Color, brillo y cuidado para cada look. Labiales, sombras, bases y todo lo que necesitas para sentirte increíble, del día a día a las ocasiones especiales.",
-  },
-  joyas: {
-    num: "02", accent: "blue", variant: "Modelo",
-    title: "Joyas",
-    text: "Detalles que hacen la diferencia. Aretes, collares, pulseras y accesorios delicados para completar tu estilo con un toque de brillo.",
-  },
-};
+// Categorías: las crea el admin (Productos › Categorías) y llegan de /api/public/categories
+let CATEGORIES = {};
+async function loadCategories() {
+  const { data, error } = await api("public/categories");
+  if (error || !Array.isArray(data)) return false;
+  CATEGORIES = Object.fromEntries(data.map((c, i) => [c.slug, {
+    num: String(i + 1).padStart(2, "0"), accent: c.accent, variant: c.variant_label || "Opción",
+    title: c.name, text: c.description || "",
+  }]));
+  return true;
+}
 
 const PAY_LABELS = { efectivo: "Efectivo", nequi: "Nequi" };
 
@@ -302,7 +300,7 @@ $("#order-form").addEventListener("submit", async (e) => {
 async function startShop() {
   renderCart();
   loadSettings();
-  const { data, error } = await api("public/products");
+  const [, { data, error }] = await Promise.all([loadCategories(), api("public/products")]);
   if (error || !data) return false;
   products = data;
   products.forEach((p) => p.product_variants.sort((a, b) => a.id - b.id));

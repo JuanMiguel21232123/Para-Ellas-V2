@@ -1,7 +1,7 @@
 /* Página de colección (se carga junto con index.css) */
-body[data-cat="maquillaje"] { --accent: var(--rose); }
-body[data-cat="joyas"] { --accent: var(--champagne); }
-body[data-cat="ropa"] { --accent: var(--plum); }
+body[data-accent="rose"] { --accent: var(--rose); }
+body[data-accent="champagne"] { --accent: var(--champagne); }
+body[data-accent="plum"] { --accent: var(--plum); }
 body { --accent: var(--rose); }
 
 .cat-hero { padding: clamp(44px, 8vw, 80px) 0 20px; }

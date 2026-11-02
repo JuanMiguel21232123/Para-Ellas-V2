@@ -1,20 +1,18 @@
 // Página de una colección: categoria.html?c=maquillaje | joyas | ropa
 const CAT = new URLSearchParams(location.search).get("c");
-if (!CATEGORIES[CAT]) location.replace("index.html#colecciones");
-const INFO = CATEGORIES[CAT] || CATEGORIES.maquillaje;
+let INFO = null; // se llena cuando startShop() trae las categorías
 
-document.body.dataset.cat = CAT;
-document.title = `${INFO.title} | ${BUSINESS}`;
-$("#cat-eyebrow").textContent = `${INFO.num} · COLECCIÓN`;
-$("#cat-title").dataset.s = CAT + "_title";
-$("#cat-title").textContent = INFO.title;
-$("#cat-text").dataset.s = CAT + "_text";
-$("#cat-text").textContent = INFO.text;
+function setupHeader() {
+  document.body.dataset.accent = INFO.accent;
+  document.title = `${INFO.title} | ${BUSINESS}`;
+  $("#cat-eyebrow").textContent = `${INFO.num} · COLECCIÓN`;
+  $("#cat-title").textContent = INFO.title;
+  $("#cat-text").textContent = INFO.text;
+  $("#cat-switch").innerHTML = Object.entries(CATEGORIES).map(([key, c]) =>
+    `<a class="tab" href="categoria.html?c=${encodeURIComponent(key)}" aria-current="${key === CAT}">${esc(c.title)}</a>`).join("");
+}
 
-$("#cat-switch").innerHTML = Object.entries(CATEGORIES).map(([key, c]) =>
-  `<a class="tab" href="categoria.html?c=${key}" aria-current="${key === CAT}">${esc(c.title)}</a>`).join("");
-
-const optionsWord = (n) => CAT === "maquillaje" ? (n === 1 ? "tono" : "tonos") : (n === 1 ? "opción" : "opciones");
+const optionsWord = (n) => INFO.variant === "Tono" ? (n === 1 ? "tono" : "tonos") : (n === 1 ? "opción" : "opciones");
 
 function priceLabel(p, vid) {
   const opts = variantsOf(p);
@@ -130,6 +128,9 @@ $("#products").addEventListener("click", (e) => {
 });
 
 startShop().then(async (ok) => {
+  INFO = CATEGORIES[CAT];
+  if (!INFO) { location.replace("index.html#colecciones"); return; }
+  setupHeader();
   if (!ok) {
     $("#products").innerHTML = `<p class="empty">No se pudo cargar el catálogo. Intenta más tarde.</p>`;
     return;

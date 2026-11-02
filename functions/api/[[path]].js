@@ -2,7 +2,11 @@ import { turso, verifyPassword, makeSessionCookie, clearSessionCookie, readSessi
 
 const json = (data, init = {}) => new Response(JSON.stringify(data), { ...init, headers: { "Content-Type": "application/json", ...(init.headers || {}) } });
 const err = (message, status = 400) => json({ error: message }, { status });
-const CATS = ["maquillaje", "joyas", "ropa"];
+const ACCENTS = ["rose", "champagne", "plum"];
+const catExists = async (env, slug) =>
+  !!slug && (await turso(env, "SELECT 1 FROM categories WHERE slug = ?", [String(slug)])).rows.length > 0;
+const slugify = (t) => String(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30).replace(/-+$/, "");
 
 // Un solo archivo decide la ruta leyendo params.path (todo lo que viene después de /api/).
 export async function onRequest({ request, env, params }) {
@@ -12,6 +16,7 @@ export async function onRequest({ request, env, params }) {
     // ---------- Público ----------
     if (path === "public/products" && method === "GET") return getProducts(env);
     if (path === "public/subs" && method === "GET") return getSubs(request, env);
+    if (path === "public/categories" && method === "GET") return getCategories(env);
     if (path === "public/settings" && method === "GET") return getSettings(env);
     if (path === "login" && method === "POST") return login(request, env);
     if (path === "session" && method === "GET") return getSession(request, env);
@@ -30,6 +35,13 @@ export async function onRequest({ request, env, params }) {
     m = /^admin\/subcategories\/(\d+)$/.exec(path);
     if (m && method === "PATCH") return updateSub(request, env, Number(m[1]));
     if (m && method === "DELETE") return deleteSub(request, env, Number(m[1]));
+
+    // ---------- Admin: categorías (menú principal) ----------
+    if (path === "admin/categories" && method === "GET") return getAdminCategories(request, env);
+    if (path === "admin/categories" && method === "POST") return createCategory(request, env);
+    m = /^admin\/categories\/([a-z0-9-]+)$/.exec(path);
+    if (m && method === "PATCH") return updateCategory(request, env, m[1]);
+    if (m && method === "DELETE") return deleteCategory(request, env, m[1]);
 
     // ---------- Admin: productos ----------
     if (path === "admin/products" && method === "GET") return getAdminProducts(request, env);
@@ -284,7 +296,7 @@ async function getAdminSubs(request, env) {
 async function createSub(request, env) {
   if (!(await requireAdmin(request, env))) return err("auth", 401);
   const { category, name } = await request.json().catch(() => ({}));
-  if (!CATS.includes(category)) return err("data");
+  if (!(await catExists(env, category))) return err("data");
   const n = String(name || "").trim();
   if (!n || n.length > 60) return err("data");
   const { rows } = await turso(env, "SELECT COALESCE(MAX(sort_order), 0) AS m FROM subcategories WHERE category = ?", [category]);
@@ -314,6 +326,85 @@ async function deleteSub(request, env, id) {
 }
 
 // =====================================================================
+// CATEGORÍAS (colecciones del menú principal)
+// El slug (maquillaje, joyas, ropa…) se genera solo a partir del nombre y
+// no cambia después: es lo que guardan products.category y subcategories.category.
+// =====================================================================
+async function getCategories(env) {
+  const { rows } = await turso(env,
+    "SELECT slug, name, description, accent, variant_label FROM categories WHERE active = 1 ORDER BY sort_order, rowid");
+  return json(rows);
+}
+
+async function getAdminCategories(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { rows } = await turso(env, "SELECT * FROM categories ORDER BY sort_order, rowid");
+  return json(rows.map((c) => ({ ...c, active: !!c.active })));
+}
+
+function cleanCategory(b) {
+  const name = String(b.name || "").trim();
+  const description = String(b.description || "").trim();
+  const variant_label = String(b.variant_label || "").trim() || "Opción";
+  if (name.length < 2 || name.length > 40 || description.length > 400 || variant_label.length > 30) return null;
+  return { name, description, variant_label, accent: ACCENTS.includes(b.accent) ? b.accent : "rose" };
+}
+
+async function createCategory(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const b = await request.json().catch(() => null);
+  const c = b && cleanCategory(b);
+  if (!c) return err("data");
+  const base = slugify(c.name);
+  if (!base) return err("data");
+  let slug = base;
+  for (let i = 2; await catExists(env, slug); i++) slug = `${base.slice(0, 26)}-${i}`;
+  const { rows } = await turso(env, "SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories");
+  await turso(env,
+    "INSERT INTO categories (slug, name, description, accent, variant_label, sort_order, active) VALUES (?, ?, ?, ?, ?, ?, 1)",
+    [slug, c.name, c.description, c.accent, c.variant_label, (rows[0]?.m || 0) + 1]);
+  return json({ slug });
+}
+
+async function updateCategory(request, env, slug) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  if (!(await catExists(env, slug))) return err("not_found", 404);
+  const b = await request.json().catch(() => ({}));
+  const sets = [], args = [];
+  if (typeof b.name === "string") {
+    const v = b.name.trim();
+    if (v.length < 2 || v.length > 40) return err("data");
+    sets.push("name = ?"); args.push(v);
+  }
+  if (typeof b.description === "string") {
+    const v = b.description.trim();
+    if (v.length > 400) return err("data");
+    sets.push("description = ?"); args.push(v);
+  }
+  if (typeof b.variant_label === "string") {
+    const v = b.variant_label.trim() || "Opción";
+    if (v.length > 30) return err("data");
+    sets.push("variant_label = ?"); args.push(v);
+  }
+  if (ACCENTS.includes(b.accent)) { sets.push("accent = ?"); args.push(b.accent); }
+  if (typeof b.active === "boolean") { sets.push("active = ?"); args.push(b.active ? 1 : 0); }
+  if (typeof b.sort_order === "number") { sets.push("sort_order = ?"); args.push(b.sort_order); }
+  if (!sets.length) return err("data");
+  args.push(slug);
+  await turso(env, `UPDATE categories SET ${sets.join(", ")} WHERE slug = ?`, args);
+  return json({ ok: true });
+}
+
+async function deleteCategory(request, env, slug) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { rows } = await turso(env, "SELECT COUNT(*) AS n FROM products WHERE category = ?", [slug]);
+  if ((rows[0]?.n || 0) > 0) return err("has_products"); // no se borra una categoría con productos
+  await turso(env, "DELETE FROM subcategories WHERE category = ?", [slug]);
+  await turso(env, "DELETE FROM categories WHERE slug = ?", [slug]);
+  return json({ ok: true });
+}
+
+// =====================================================================
 // ADMIN: PRODUCTOS
 // =====================================================================
 async function getAdminProducts(request, env) {
@@ -329,8 +420,8 @@ async function getAdminProducts(request, env) {
   return json(products.map((p) => ({ ...p, active: !!p.active, product_variants: byProduct[p.id] || [] })));
 }
 
-function validProductBody(b) {
-  if (!CATS.includes(b.category)) return "data";
+async function validProductBody(env, b) {
+  if (!(await catExists(env, b.category))) return "data";
   const name = String(b.name || "").trim();
   if (name.length < 2) return "data";
   const price = Number(b.price);
@@ -342,7 +433,7 @@ async function createProduct(request, env) {
   if (!(await requireAdmin(request, env))) return err("auth", 401);
   const b = await request.json().catch(() => null);
   if (!b) return err("data");
-  const bad = validProductBody(b);
+  const bad = await validProductBody(env, b);
   if (bad) return err(bad);
 
   const { lastInsertRowid: id } = await turso(env,
@@ -361,7 +452,7 @@ async function updateProduct(request, env, id) {
   if (!(await requireAdmin(request, env))) return err("auth", 401);
   const b = await request.json().catch(() => null);
   if (!b) return err("data");
-  const bad = validProductBody(b);
+  const bad = await validProductBody(env, b);
   if (bad) return err(bad);
 
   const { rows: cur } = await turso(env, "SELECT image_url FROM products WHERE id = ?", [id]);
