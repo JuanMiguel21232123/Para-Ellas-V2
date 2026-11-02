@@ -1,4 +1,4 @@
-import { turso, verifyPassword, makeSessionCookie, clearSessionCookie, readSession, deleteImageByUrl } from "./_lib/db.js";
+import { turso, verifyPassword, makeSessionCookie, clearSessionCookie, readSession, deleteImageByUrl } from "../_lib/db.js";
 
 const json = (data, init = {}) => new Response(JSON.stringify(data), { ...init, headers: { "Content-Type": "application/json", ...(init.headers || {}) } });
 const err = (message, status = 400) => json({ error: message }, { status });
@@ -6,12 +6,10 @@ const CATS = ["maquillaje", "joyas", "ropa"];
 
 // Un solo archivo decide la ruta leyendo params.path (todo lo que viene después de /api/).
 export async function onRequest({ request, env, params }) {
-  const parts = params.path || [];
-  const path = parts.join("/");
+  const path = (params.path || []).join("/");
   const method = request.method;
-
   try {
-    // ---------- públicas ----------
+    // ---------- Público ----------
     if (path === "public/products" && method === "GET") return getProducts(env);
     if (path === "public/subs" && method === "GET") return getSubs(request, env);
     if (path === "public/settings" && method === "GET") return getSettings(env);
@@ -20,48 +18,57 @@ export async function onRequest({ request, env, params }) {
     if (path === "session" && method === "DELETE") return json(null, { headers: { "Set-Cookie": clearSessionCookie() } });
     if (path === "orders" && method === "POST") return createOrder(request, env);
 
-    // ---------- admin: todo lo de aquí abajo exige sesión ----------
-    if (parts[0] === "admin") {
-      const adminId = await readSession(env, request.headers.get("Cookie"));
-      if (!adminId) return err("No autenticado.", 401);
-      const sub = parts.slice(1); // p.ej. ["products", "5"]
+    // ---------- Admin: pedidos ----------
+    if (path === "admin/orders" && method === "GET") return getAdminOrders(request, env);
+    let m = /^admin\/orders\/(\d+)$/.exec(path);
+    if (m && method === "PATCH") return updateOrderStatus(request, env, Number(m[1]));
+    if (m && method === "DELETE") return deleteOrder(request, env, Number(m[1]));
 
-      if (sub[0] === "products" && sub.length === 1 && method === "GET") return adminProducts(env);
-      if (sub[0] === "products" && sub.length === 1 && method === "POST") return createProduct(request, env);
-      if (sub[0] === "products" && sub.length === 2 && method === "PATCH") return updateProduct(request, env, sub[1]);
-      if (sub[0] === "products" && sub.length === 2 && method === "DELETE") return deleteProduct(env, sub[1]);
+    // ---------- Admin: subsecciones ----------
+    if (path === "admin/subcategories" && method === "GET") return getAdminSubs(request, env);
+    if (path === "admin/subcategories" && method === "POST") return createSub(request, env);
+    m = /^admin\/subcategories\/(\d+)$/.exec(path);
+    if (m && method === "PATCH") return updateSub(request, env, Number(m[1]));
+    if (m && method === "DELETE") return deleteSub(request, env, Number(m[1]));
 
-      if (sub[0] === "subcategories" && sub.length === 1 && method === "GET") return adminSubs(env);
-      if (sub[0] === "subcategories" && sub.length === 1 && method === "POST") return createSub(request, env);
-      if (sub[0] === "subcategories" && sub.length === 2 && method === "PATCH") return updateSub(request, env, sub[1]);
-      if (sub[0] === "subcategories" && sub.length === 2 && method === "DELETE") return deleteSub(env, sub[1]);
+    // ---------- Admin: productos ----------
+    if (path === "admin/products" && method === "GET") return getAdminProducts(request, env);
+    if (path === "admin/products" && method === "POST") return createProduct(request, env);
+    m = /^admin\/products\/(\d+)$/.exec(path);
+    if (m && method === "PATCH") return updateProduct(request, env, Number(m[1]));
+    if (m && method === "DELETE") return deleteProduct(request, env, Number(m[1]));
 
-      if (sub[0] === "orders" && sub.length === 1 && method === "GET") return adminOrders(env);
-      if (sub[0] === "orders" && sub.length === 2 && method === "PATCH") return updateOrderStatus(request, env, sub[1]);
-      if (sub[0] === "orders" && sub.length === 2 && method === "DELETE") return deleteOrderAdmin(env, sub[1]);
+    // ---------- Admin: venta en tienda ----------
+    if (path === "admin/sales" && method === "POST") return createSale(request, env);
 
-      if (sub[0] === "sales" && sub.length === 1 && method === "POST") return createStoreSale(request, env);
+    // ---------- Admin: gastos ----------
+    if (path === "admin/expenses" && method === "GET") return getExpenses(request, env);
+    if (path === "admin/expenses" && method === "POST") return createExpense(request, env);
+    m = /^admin\/expenses\/(\d+)$/.exec(path);
+    if (m && method === "DELETE") return deleteExpense(request, env, Number(m[1]));
 
-      if (sub[0] === "expenses" && sub.length === 1 && method === "GET") return adminExpenses(env);
-      if (sub[0] === "expenses" && sub.length === 1 && method === "POST") return createExpense(request, env);
-      if (sub[0] === "expenses" && sub.length === 2 && method === "DELETE") return deleteExpense(env, sub[1]);
+    // ---------- Admin: personalización ----------
+    if (path === "admin/settings" && method === "PATCH") return updateSettings(request, env);
 
-      if (sub[0] === "settings" && sub.length === 1 && method === "PATCH") return patchSettings(request, env);
-
-      if (sub[0] === "upload" && sub.length === 1 && method === "POST") return uploadImage(request, env);
-    }
+    // ---------- Admin: fotos (R2) ----------
+    if (path === "admin/upload" && method === "POST") return uploadPhoto(request, env);
   } catch (e) {
-    return err(e.message === "stock" || /^stock:/.test(e.message || "") ? e.message : "server", 500);
+    return err("server", 500);
   }
   return err("not_found", 404);
 }
 
+// ---------- Sesión admin ----------
+async function requireAdmin(request, env) {
+  return await readSession(env, request.headers.get("Cookie"));
+}
+
 // =====================================================================
-// PÚBLICAS
+// PÚBLICO
 // =====================================================================
 async function getProducts(env) {
   const { rows: products } = await turso(env,
-    "SELECT id, category, subcategory_id, name, description, price, image_url, stock, active FROM products WHERE active = 1 ORDER BY created_at DESC");
+    "SELECT id, category, subcategory_id, name, description, price, image_url, stock FROM products WHERE active = 1 ORDER BY created_at DESC");
   const { rows: variants } = await turso(env,
     "SELECT id, product_id, name, price, stock FROM product_variants WHERE active = 1 ORDER BY id");
   const byProduct = {};
@@ -104,7 +111,17 @@ async function getSession(request, env) {
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sin O/0/I/1
 const genCode = () => Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
-const PENDING_LIMIT = 3;
+const PENDING_LIMIT = 3; // pedidos "pending" simultáneos permitidos por teléfono
+
+async function uniqueCode(env) {
+  let code = genCode();
+  for (let i = 0; i < 5; i++) {
+    const { rows } = await turso(env, "SELECT 1 FROM orders WHERE code = ?", [code]);
+    if (!rows.length) break;
+    code = genCode();
+  }
+  return code;
+}
 
 async function createOrder(request, env) {
   const b = await request.json().catch(() => null);
@@ -144,16 +161,11 @@ async function createOrder(request, env) {
   if ((pending[0]?.n || 0) >= PENDING_LIMIT) return err("limit");
 
   const total = lines.reduce((t, l) => t + l.price * l.qty, 0);
-  let code = genCode();
-  for (let i = 0; i < 5; i++) {
-    const { rows } = await turso(env, "SELECT 1 FROM orders WHERE code = ?", [code]);
-    if (!rows.length) break;
-    code = genCode();
-  }
+  const code = await uniqueCode(env);
 
   const { lastInsertRowid: orderId } = await turso(env,
-    `INSERT INTO orders (code, customer_name, customer_phone, delivery_type, address, neighborhood, payment_method, preferred_time, notes, total, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+    `INSERT INTO orders (code, customer_name, customer_phone, delivery_type, address, neighborhood, payment_method, preferred_time, notes, total, status, status_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
     [code, name, phone, instore ? "tienda" : "domicilio", instore ? null : address, instore ? null : hood,
       instore ? null : payment, b.time || null, b.notes || null, total]);
 
@@ -167,306 +179,342 @@ async function createOrder(request, env) {
 }
 
 // =====================================================================
-// ADMIN · PRODUCTOS
+// EXISTENCIAS: una sola columna `stock` (NULL = sin control) en
+// products y product_variants. Se descuenta al confirmar un pedido o
+// al registrar una venta en tienda, y se devuelve al cancelar/eliminar
+// un pedido que ya estaba confirmado o entregado.
 // =====================================================================
-async function adminProducts(env) {
-  const { rows: products } = await turso(env, "SELECT * FROM products ORDER BY created_at DESC");
-  const { rows: variants } = await turso(env, "SELECT * FROM product_variants ORDER BY id");
-  const byProduct = {};
-  variants.forEach((v) => (byProduct[v.product_id] ||= []).push(v));
-  return json(products.map((p) => ({ ...p, product_variants: byProduct[p.id] || [] })));
+class StockError extends Error {
+  constructor(itemName) { super("stock"); this.itemName = itemName; }
 }
 
-function readProductBody(d) {
-  const name = String(d.name || "").trim();
-  const category = String(d.category || "");
-  const price = Number(d.price);
-  if (name.length < 2) throw new Error("El nombre debe tener al menos 2 caracteres.");
-  if (!CATS.includes(category)) throw new Error("Categoría inválida.");
-  if (!Number.isInteger(price) || price < 0) throw new Error("El precio debe ser un número entero.");
-  const stockRaw = d.stock === "" || d.stock == null ? null : Number(d.stock);
-  if (stockRaw !== null && (!Number.isInteger(stockRaw) || stockRaw < 0)) throw new Error("El stock debe ser un número entero (o vacío).");
-  return {
-    name, category,
-    subcategory_id: d.subcategory_id ? Number(d.subcategory_id) : null,
-    description: d.description ? String(d.description).trim() : null,
-    price,
-    image_url: d.image_url || null,
-    stock: stockRaw,
-    active: d.active === false ? 0 : 1,
-  };
-}
-
-function readVariants(list) {
-  const out = [], seen = new Set();
-  for (const v of Array.isArray(list) ? list : []) {
-    const name = String(v.name || "").trim();
-    if (!name) continue;
-    const key = name.toLowerCase();
-    if (seen.has(key)) throw new Error(`"${name}" está repetido en la lista.`);
-    seen.add(key);
-    const price = v.price === "" || v.price == null ? null : Number(v.price);
-    if (price !== null && (!Number.isInteger(price) || price < 0)) throw new Error(`El precio de "${name}" debe ser un número entero.`);
-    const stock = v.stock === "" || v.stock == null ? null : Number(v.stock);
-    if (stock !== null && (!Number.isInteger(stock) || stock < 0)) throw new Error(`Las existencias de "${name}" deben ser un número entero.`);
-    out.push({ id: v.id || null, name, price, stock, active: v.active !== false });
+// items: [{ product_id, variant_id, name, variant_name, quantity }]
+// sign: -1 descuenta, +1 devuelve
+async function adjustStock(env, items, sign) {
+  // Primero se valida que alcance (solo al descontar); si algo falla, no se toca nada.
+  if (sign < 0) {
+    for (const it of items) {
+      const cur = await currentStock(env, it);
+      if (cur != null && cur + sign * it.quantity < 0) throw new StockError(it.variant_name || it.name);
+    }
   }
-  return out;
-}
-
-async function syncVariants(env, productId, variants, existingIds) {
-  const keep = new Set(variants.filter((v) => v.id).map((v) => v.id));
-  for (const id of existingIds) if (!keep.has(id)) await turso(env, "DELETE FROM product_variants WHERE id = ?", [id]);
-  for (const v of variants) {
-    if (v.id) await turso(env, "UPDATE product_variants SET name=?, price=?, stock=?, active=? WHERE id=?", [v.name, v.price, v.stock, v.active ? 1 : 0, v.id]);
-    else await turso(env, "INSERT INTO product_variants (product_id, name, price, stock, active) VALUES (?, ?, ?, ?, ?)", [productId, v.name, v.price, v.stock, v.active ? 1 : 0]);
+  for (const it of items) {
+    const cur = await currentStock(env, it);
+    if (cur == null) continue; // sin control de existencias para este producto/variante
+    const next = Math.max(0, cur + sign * it.quantity);
+    if (it.variant_id) await turso(env, "UPDATE product_variants SET stock = ? WHERE id = ?", [next, it.variant_id]);
+    else if (it.product_id) await turso(env, "UPDATE products SET stock = ? WHERE id = ?", [next, it.product_id]);
   }
 }
 
-async function createProduct(request, env) {
-  const d = await request.json().catch(() => null);
-  if (!d) return err("data");
-  let p, variants;
-  try { p = readProductBody(d); variants = readVariants(d.variants); } catch (e) { return err(e.message); }
-  const { lastInsertRowid } = await turso(env,
-    "INSERT INTO products (category, subcategory_id, name, description, price, image_url, stock, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    [p.category, p.subcategory_id, p.name, p.description, p.price, p.image_url, variants.length ? null : p.stock, p.active]);
-  await syncVariants(env, lastInsertRowid, variants, []);
-  return json({ id: lastInsertRowid });
+async function currentStock(env, it) {
+  if (it.variant_id) {
+    const { rows } = await turso(env, "SELECT stock FROM product_variants WHERE id = ?", [it.variant_id]);
+    return rows[0] ? rows[0].stock : null;
+  }
+  if (it.product_id) {
+    const { rows } = await turso(env, "SELECT stock FROM products WHERE id = ?", [it.product_id]);
+    return rows[0] ? rows[0].stock : null;
+  }
+  return null;
 }
 
-async function updateProduct(request, env, id) {
-  const d = await request.json().catch(() => null);
-  if (!d) return err("data");
-  let p, variants;
-  try { p = readProductBody(d); variants = readVariants(d.variants); } catch (e) { return err(e.message); }
+// =====================================================================
+// ADMIN: PEDIDOS
+// =====================================================================
+async function getAdminOrders(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { rows: orders } = await turso(env, "SELECT * FROM orders ORDER BY created_at DESC");
+  const { rows: items } = await turso(env, "SELECT * FROM order_items");
+  const byOrder = {};
+  items.forEach((i) => (byOrder[i.order_id] ||= []).push(i));
+  return json(orders.map((o) => ({ ...o, order_items: byOrder[o.id] || [] })));
+}
 
-  const { rows: before } = await turso(env, "SELECT image_url FROM products WHERE id = ?", [id]);
-  if (!before[0]) return err("No encontrado.", 404);
+const ORDER_STATUSES = ["pending", "confirmed", "delivered", "cancelled"];
 
-  await turso(env, "UPDATE products SET category=?, subcategory_id=?, name=?, description=?, price=?, image_url=?, stock=?, active=? WHERE id=?",
-    [p.category, p.subcategory_id, p.name, p.description, p.price, p.image_url, variants.length ? null : p.stock, p.active, id]);
+async function updateOrderStatus(request, env, id) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { status } = await request.json().catch(() => ({}));
+  if (!ORDER_STATUSES.includes(status)) return err("data");
 
-  const { rows: existing } = await turso(env, "SELECT id FROM product_variants WHERE product_id = ?", [id]);
-  await syncVariants(env, id, variants, existing.map((r) => r.id));
+  const { rows } = await turso(env, "SELECT status FROM orders WHERE id = ?", [id]);
+  const o = rows[0];
+  if (!o) return err("not_found", 404);
 
-  if (before[0].image_url && before[0].image_url !== p.image_url) await deleteImageByUrl(env, before[0].image_url);
+  const wasCommitted = o.status === "confirmed" || o.status === "delivered";
+  const willBeCommitted = status === "confirmed" || status === "delivered";
+
+  if (wasCommitted !== willBeCommitted) {
+    const { rows: items } = await turso(env, "SELECT product_id, variant_id, name, variant_name, quantity FROM order_items WHERE order_id = ?", [id]);
+    try {
+      await adjustStock(env, items, willBeCommitted ? -1 : 1);
+    } catch (e) {
+      if (e instanceof StockError) return err(`stock:${e.itemName}`);
+      throw e;
+    }
+  }
+
+  await turso(env, "UPDATE orders SET status = ?, status_at = datetime('now') WHERE id = ?", [status, id]);
   return json({ ok: true });
 }
 
-async function deleteProduct(env, id) {
-  const { rows } = await turso(env, "SELECT image_url FROM products WHERE id = ?", [id]);
-  if (!rows[0]) return err("No encontrado.", 404);
-  await turso(env, "DELETE FROM product_variants WHERE product_id = ?", [id]);
-  await turso(env, "DELETE FROM products WHERE id = ?", [id]);
-  await deleteImageByUrl(env, rows[0].image_url);
+async function deleteOrder(request, env, id) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { rows } = await turso(env, "SELECT status FROM orders WHERE id = ?", [id]);
+  const o = rows[0];
+  if (!o) return err("not_found", 404);
+  if (o.status === "confirmed" || o.status === "delivered") {
+    const { rows: items } = await turso(env, "SELECT product_id, variant_id, name, variant_name, quantity FROM order_items WHERE order_id = ?", [id]);
+    await adjustStock(env, items, 1);
+  }
+  await turso(env, "DELETE FROM orders WHERE id = ?", [id]); // order_items se borra en cascada
   return json({ ok: true });
 }
 
 // =====================================================================
-// ADMIN · SUBSECCIONES
+// ADMIN: SUBSECCIONES
 // =====================================================================
-async function adminSubs(env) {
+async function getAdminSubs(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
   const { rows } = await turso(env, "SELECT * FROM subcategories ORDER BY category, sort_order, id");
   return json(rows);
 }
 
 async function createSub(request, env) {
-  const d = await request.json().catch(() => null);
-  const category = String(d?.category || ""), name = String(d?.name || "").trim();
-  if (!CATS.includes(category)) return err("Categoría inválida.");
-  if (!name) return err("Escribe el nombre de la subsección.");
-  const { rows: dup } = await turso(env, "SELECT 1 FROM subcategories WHERE category=? AND lower(name)=lower(?)", [category, name]);
-  if (dup.length) return err(`Ya existe "${name}" en esa colección.`);
-  const { rows: mx } = await turso(env, "SELECT COALESCE(MAX(sort_order),0) AS m FROM subcategories WHERE category=?", [category]);
-  const { lastInsertRowid } = await turso(env, "INSERT INTO subcategories (category, name, sort_order) VALUES (?, ?, ?)", [category, name, (mx[0]?.m || 0) + 1]);
-  return json({ id: lastInsertRowid });
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { category, name } = await request.json().catch(() => ({}));
+  if (!CATS.includes(category)) return err("data");
+  const n = String(name || "").trim();
+  if (!n || n.length > 60) return err("data");
+  const { rows } = await turso(env, "SELECT COALESCE(MAX(sort_order), 0) AS m FROM subcategories WHERE category = ?", [category]);
+  const { lastInsertRowid: id } = await turso(env,
+    "INSERT INTO subcategories (category, name, sort_order, active) VALUES (?, ?, ?, 1)", [category, n, (rows[0]?.m || 0) + 1]);
+  return json({ id });
 }
 
 async function updateSub(request, env, id) {
-  const d = await request.json().catch(() => null) || {};
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const b = await request.json().catch(() => ({}));
   const sets = [], args = [];
-  if (d.name !== undefined) { const n = String(d.name).trim(); if (!n) return err("El nombre no puede quedar vacío."); sets.push("name=?"); args.push(n); }
-  if (d.active !== undefined) { sets.push("active=?"); args.push(d.active ? 1 : 0); }
-  if (d.sort_order !== undefined) { sets.push("sort_order=?"); args.push(Number(d.sort_order)); }
-  if (!sets.length) return err("Nada que actualizar.");
+  if (typeof b.name === "string") { sets.push("name = ?"); args.push(b.name.trim()); }
+  if (typeof b.active === "boolean") { sets.push("active = ?"); args.push(b.active ? 1 : 0); }
+  if (typeof b.sort_order === "number") { sets.push("sort_order = ?"); args.push(b.sort_order); }
+  if (!sets.length) return err("data");
   args.push(id);
-  await turso(env, `UPDATE subcategories SET ${sets.join(", ")} WHERE id=?`, args);
+  await turso(env, `UPDATE subcategories SET ${sets.join(", ")} WHERE id = ?`, args);
   return json({ ok: true });
 }
 
-async function deleteSub(env, id) {
+async function deleteSub(request, env, id) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
   await turso(env, "UPDATE products SET subcategory_id = NULL WHERE subcategory_id = ?", [id]);
   await turso(env, "DELETE FROM subcategories WHERE id = ?", [id]);
   return json({ ok: true });
 }
 
 // =====================================================================
-// ADMIN · PEDIDOS (confirmar / entregar / cancelar / eliminar, maneja stock)
+// ADMIN: PRODUCTOS
 // =====================================================================
-const NEXT_STATUS = { pending: ["confirmed", "cancelled"], confirmed: ["delivered", "cancelled"], delivered: ["cancelled"], cancelled: [] };
+async function getAdminProducts(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { rows: products } = await turso(env,
+    "SELECT id, category, subcategory_id, name, description, price, image_url, stock, active FROM products ORDER BY created_at DESC");
+  const { rows: variants } = await turso(env,
+    "SELECT id, product_id, name, price, stock, active FROM product_variants ORDER BY id");
+  const byProduct = {};
+  variants.forEach((v) => (byProduct[v.product_id] ||= []).push({
+    id: v.id, name: v.name, price: v.price, stock: v.stock, active: !!v.active, sold_out: v.stock === 0,
+  }));
+  return json(products.map((p) => ({ ...p, active: !!p.active, product_variants: byProduct[p.id] || [] })));
+}
 
-// Descuenta stock (al confirmar) o lo devuelve (al cancelar desde confirmado/entregado)
-async function adjustStockForOrder(env, orderId, sign) {
-  const { rows: items } = await turso(env, "SELECT product_id, variant_id, name, quantity FROM order_items WHERE order_id = ?", [orderId]);
-  if (sign < 0) {
-    // vamos a descontar: primero validar que alcance
-    for (const it of items) {
-      const table = it.variant_id ? "product_variants" : "products";
-      const { rows } = await turso(env, `SELECT stock FROM ${table} WHERE id = ?`, [it.variant_id || it.product_id]);
-      const stock = rows[0]?.stock;
-      if (stock != null && stock + 0 < it.quantity) throw new Error(`stock:${it.name}`);
+function validProductBody(b) {
+  if (!CATS.includes(b.category)) return "data";
+  const name = String(b.name || "").trim();
+  if (name.length < 2) return "data";
+  const price = Number(b.price);
+  if (!Number.isInteger(price) || price < 0) return "data";
+  return null;
+}
+
+async function createProduct(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const b = await request.json().catch(() => null);
+  if (!b) return err("data");
+  const bad = validProductBody(b);
+  if (bad) return err(bad);
+
+  const { lastInsertRowid: id } = await turso(env,
+    `INSERT INTO products (category, subcategory_id, name, description, price, image_url, active, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [b.category, b.subcategory_id || null, b.name.trim(), b.description || "", Number(b.price), b.image_url || null,
+      b.active === false ? 0 : 1, b.stock == null ? null : Number(b.stock)]);
+
+  for (const v of Array.isArray(b.variants) ? b.variants : []) {
+    await turso(env, "INSERT INTO product_variants (product_id, name, price, stock, active) VALUES (?, ?, ?, ?, ?)",
+      [id, v.name, v.price == null ? null : Number(v.price), v.stock == null ? null : Number(v.stock), v.active === false ? 0 : 1]);
+  }
+  return json({ id });
+}
+
+async function updateProduct(request, env, id) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const b = await request.json().catch(() => null);
+  if (!b) return err("data");
+  const bad = validProductBody(b);
+  if (bad) return err(bad);
+
+  const { rows: cur } = await turso(env, "SELECT image_url FROM products WHERE id = ?", [id]);
+  if (!cur.length) return err("not_found", 404);
+  const oldImage = cur[0].image_url;
+
+  await turso(env,
+    `UPDATE products SET category = ?, subcategory_id = ?, name = ?, description = ?, price = ?, image_url = ?, active = ?, stock = ? WHERE id = ?`,
+    [b.category, b.subcategory_id || null, b.name.trim(), b.description || "", Number(b.price), b.image_url || null,
+      b.active === false ? 0 : 1, b.stock == null ? null : Number(b.stock), id]);
+
+  if (oldImage && oldImage !== (b.image_url || null)) await deleteImageByUrl(env, oldImage);
+
+  const incoming = Array.isArray(b.variants) ? b.variants : [];
+  const { rows: existing } = await turso(env, "SELECT id FROM product_variants WHERE product_id = ?", [id]);
+  const keep = new Set();
+  for (const v of incoming) {
+    if (v.id && existing.some((r) => r.id === v.id)) {
+      keep.add(v.id);
+      await turso(env, "UPDATE product_variants SET name = ?, price = ?, stock = ?, active = ? WHERE id = ?",
+        [v.name, v.price == null ? null : Number(v.price), v.stock == null ? null : Number(v.stock), v.active === false ? 0 : 1, v.id]);
+    } else {
+      const { lastInsertRowid: newId } = await turso(env,
+        "INSERT INTO product_variants (product_id, name, price, stock, active) VALUES (?, ?, ?, ?, ?)",
+        [id, v.name, v.price == null ? null : Number(v.price), v.stock == null ? null : Number(v.stock), v.active === false ? 0 : 1]);
+      keep.add(newId);
     }
   }
-  for (const it of items) {
-    const table = it.variant_id ? "product_variants" : "products";
-    await turso(env, `UPDATE ${table} SET stock = CASE WHEN stock IS NULL THEN NULL ELSE MAX(0, stock + ?) END WHERE id = ?`,
-      [sign * it.quantity, it.variant_id || it.product_id]);
-  }
-}
+  for (const r of existing) if (!keep.has(r.id)) await turso(env, "DELETE FROM product_variants WHERE id = ?", [r.id]);
 
-async function updateOrderStatus(request, env, id) {
-  const d = await request.json().catch(() => null);
-  const status = String(d?.status || "");
-  const { rows } = await turso(env, "SELECT status FROM orders WHERE id = ?", [id]);
-  const order = rows[0];
-  if (!order) return err("No encontrado.", 404);
-  if (!NEXT_STATUS[order.status]?.includes(status)) return err("Transición de estado inválida.");
-
-  if (status === "confirmed") await adjustStockForOrder(env, id, -1);
-  if (status === "cancelled" && (order.status === "confirmed" || order.status === "delivered")) await adjustStockForOrder(env, id, +1);
-
-  await turso(env, "UPDATE orders SET status = ?, status_at = datetime('now') WHERE id = ?", [status, id]);
   return json({ ok: true });
 }
 
-async function deleteOrderAdmin(env, id) {
-  const { rows } = await turso(env, "SELECT status FROM orders WHERE id = ?", [id]);
-  const order = rows[0];
-  if (!order) return err("No encontrado.", 404);
-  if (order.status === "confirmed" || order.status === "delivered") await adjustStockForOrder(env, id, +1);
-  await turso(env, "DELETE FROM order_items WHERE order_id = ?", [id]);
-  await turso(env, "DELETE FROM orders WHERE id = ?", [id]);
+async function deleteProduct(request, env, id) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { rows } = await turso(env, "SELECT image_url FROM products WHERE id = ?", [id]);
+  if (rows[0]?.image_url) await deleteImageByUrl(env, rows[0].image_url);
+  await turso(env, "DELETE FROM products WHERE id = ?", [id]); // variantes en cascada; pedidos conservan nombre/precio (SET NULL)
   return json({ ok: true });
-}
-
-async function adminOrders(env) {
-  const { rows: orders } = await turso(env, "SELECT * FROM orders ORDER BY created_at DESC LIMIT 500");
-  const { rows: items } = await turso(env, "SELECT * FROM order_items WHERE order_id IN (" + (orders.map(() => "?").join(",") || "0") + ")", orders.map((o) => o.id));
-  const byOrder = {};
-  items.forEach((i) => (byOrder[i.order_id] ||= []).push(i));
-  return json(orders.map((o) => ({ ...o, order_items: byOrder[o.id] || [] })));
 }
 
 // =====================================================================
-// ADMIN · VENTA EN TIENDA (mostrador: ya pagada, descuenta stock de inmediato)
+// ADMIN: VENTA EN TIENDA
+// (se registra como un pedido ya "delivered" y descuenta existencias de una vez)
 // =====================================================================
 const STORE_NAME = "Venta en tienda", STORE_PHONE = "0000000";
 
-async function createStoreSale(request, env) {
-  const d = await request.json().catch(() => null);
-  if (!d) return err("data");
-  const items = Array.isArray(d.items) ? d.items : [];
+async function createSale(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const b = await request.json().catch(() => null);
+  if (!b) return err("data");
+  const items = Array.isArray(b.items) ? b.items : [];
   if (!items.length) return err("items");
-  const payment = String(d.payment || "");
-  if (!["efectivo", "nequi"].includes(payment)) return err("payment");
 
   const lines = [];
   for (const it of items) {
-    const { rows } = await turso(env, "SELECT id, name, category, price FROM products WHERE id = ?", [it.id]);
+    const { rows } = await turso(env, "SELECT id, name, category FROM products WHERE id = ?", [it.id]);
     const p = rows[0];
     if (!p) return err("invalid");
     let variantName = null;
     if (it.variant_id) {
       const { rows: vr } = await turso(env, "SELECT id, name FROM product_variants WHERE id = ? AND product_id = ?", [it.variant_id, it.id]);
-      if (!vr[0]) return err("variant");
-      variantName = vr[0].name;
+      const v = vr[0];
+      if (!v) return err("variant");
+      variantName = v.name;
     }
     const qty = Math.max(1, Math.min(20, Number(it.qty) || 1));
     const price = Number(it.price);
-    if (!Number.isInteger(price) || price < 0) return err("items");
+    if (!Number.isInteger(price) || price < 0) return err("data");
     lines.push({ product_id: p.id, variant_id: it.variant_id || null, name: p.name, category: p.category, variant_name: variantName, price, qty });
   }
 
-  const total = lines.reduce((t, l) => t + l.price * l.qty, 0);
-  let code = genCode();
-  for (let i = 0; i < 5; i++) {
-    const { rows } = await turso(env, "SELECT 1 FROM orders WHERE code = ?", [code]);
-    if (!rows.length) break;
-    code = genCode();
+  try {
+    await adjustStock(env, lines.map((l) => ({ product_id: l.product_id, variant_id: l.variant_id, name: l.name, variant_name: l.variant_name, quantity: l.qty })), -1);
+  } catch (e) {
+    if (e instanceof StockError) return err(`stock:${e.itemName}`);
+    throw e;
   }
+
+  const total = lines.reduce((t, l) => t + l.price * l.qty, 0);
+  const code = await uniqueCode(env);
+  const payment = String(b.payment || "");
 
   const { lastInsertRowid: orderId } = await turso(env,
     `INSERT INTO orders (code, customer_name, customer_phone, delivery_type, payment_method, notes, total, status, status_at)
      VALUES (?, ?, ?, 'tienda', ?, ?, ?, 'delivered', datetime('now'))`,
-    [code, STORE_NAME, STORE_PHONE, payment, d.notes || null, total]);
+    [code, STORE_NAME, STORE_PHONE, ["efectivo", "nequi"].includes(payment) ? payment : null, b.notes || null, total]);
 
   for (const l of lines) {
-    await turso(env,
-      "INSERT INTO order_items (order_id, product_id, variant_id, name, variant_name, price, quantity, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    await turso(env, "INSERT INTO order_items (order_id, product_id, variant_id, name, variant_name, price, quantity, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [orderId, l.product_id, l.variant_id, l.name, l.variant_name, l.price, l.qty, l.category]);
   }
-  await adjustStockForOrder(env, orderId, -1);
-
   return json({ code, total });
 }
 
 // =====================================================================
-// ADMIN · GASTOS
+// ADMIN: GASTOS
 // =====================================================================
-async function adminExpenses(env) {
-  const { rows } = await turso(env, "SELECT * FROM expenses ORDER BY spent_at DESC, id DESC LIMIT 1000");
+async function getExpenses(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { rows } = await turso(env, "SELECT * FROM expenses ORDER BY spent_at DESC, id DESC");
   return json(rows);
 }
 
 async function createExpense(request, env) {
-  const d = await request.json().catch(() => null);
-  const spent_at = String(d?.spent_at || ""), description = String(d?.description || "").trim();
-  const amount = Number(d?.amount);
-  if (!spent_at) return err("Elige la fecha del gasto.");
-  if (description.length < 2) return err("Escribe en qué se gastó.");
-  if (!Number.isInteger(amount) || amount <= 0) return err("El monto debe ser un número entero mayor que 0.");
-  const { lastInsertRowid } = await turso(env, "INSERT INTO expenses (spent_at, description, amount, category) VALUES (?, ?, ?, ?)",
-    [spent_at, description, amount, d.category || null]);
-  return json({ id: lastInsertRowid });
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const b = await request.json().catch(() => ({}));
+  const spent_at = String(b.spent_at || "").trim(), description = String(b.description || "").trim();
+  const amount = Number(b.amount);
+  if (!spent_at || description.length < 2 || !Number.isInteger(amount) || amount <= 0) return err("data");
+  const { lastInsertRowid: id } = await turso(env,
+    "INSERT INTO expenses (spent_at, description, amount, category) VALUES (?, ?, ?, ?)",
+    [spent_at, description, amount, b.category || null]);
+  return json({ id });
 }
 
-async function deleteExpense(env, id) {
+async function deleteExpense(request, env, id) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
   await turso(env, "DELETE FROM expenses WHERE id = ?", [id]);
   return json({ ok: true });
 }
 
 // =====================================================================
-// ADMIN · PERSONALIZACIÓN
+// ADMIN: PERSONALIZACIÓN
 // =====================================================================
-async function patchSettings(request, env) {
-  const d = await request.json().catch(() => null) || {};
-  const upserts = Object.entries(d.set || {});
-  const deletes = Array.isArray(d.delete) ? d.delete : [];
-  for (const [key, value] of upserts) {
+async function updateSettings(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  const { set, delete: del } = await request.json().catch(() => ({}));
+  for (const [key, value] of Object.entries(set || {})) {
     await turso(env, "INSERT INTO site_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [key, String(value)]);
   }
-  for (const key of deletes) await turso(env, "DELETE FROM site_settings WHERE key = ?", [key]);
+  for (const key of Array.isArray(del) ? del : []) {
+    await turso(env, "DELETE FROM site_settings WHERE key = ?", [key]);
+  }
   return json({ ok: true });
 }
 
 // =====================================================================
-// ADMIN · SUBIR FOTO A R2
+// ADMIN: FOTOS (R2)
 // =====================================================================
-const EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-const MAX_IMAGE = 8 * 1024 * 1024; // ya viene comprimida desde el navegador
+const UPLOAD_EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+const MAX_UPLOAD = 50 * 1024 * 1024;
 
-async function uploadImage(request, env) {
-  if (!env.PRODUCT_IMAGES) return err("El bucket de fotos no está configurado.", 500);
-  if (!env.R2_PUBLIC_BASE) return err("Falta configurar la URL pública de las fotos.", 500);
-  const type = request.headers.get("Content-Type") || "";
-  const ext = EXT[type];
-  if (!ext) return err("La foto debe ser JPG, PNG o WebP.");
+async function uploadPhoto(request, env) {
+  if (!(await requireAdmin(request, env))) return err("auth", 401);
+  if (!env.PRODUCT_IMAGES || !env.R2_PUBLIC_BASE) return err("not_configured", 500);
+  const ct = (request.headers.get("Content-Type") || "").split(";")[0].trim();
+  const ext = UPLOAD_EXT[ct];
+  if (!ext) return err("type");
   const buf = await request.arrayBuffer();
-  if (!buf.byteLength) return err("La foto llegó vacía.");
-  if (buf.byteLength > MAX_IMAGE) return err("La foto pesa demasiado.");
-  const key = `${crypto.randomUUID()}.${ext}`;
-  await env.PRODUCT_IMAGES.put(key, buf, { httpMetadata: { contentType: type, cacheControl: "public, max-age=31536000, immutable" } });
+  if (!buf.byteLength || buf.byteLength > MAX_UPLOAD) return err("size");
+  const key = `products/${crypto.randomUUID()}.${ext}`;
+  await env.PRODUCT_IMAGES.put(key, buf, { httpMetadata: { contentType: ct } });
   const base = String(env.R2_PUBLIC_BASE).replace(/\/+$/, "");
   return json({ url: `${base}/${key}` });
 }
