@@ -29,11 +29,6 @@ const CATEGORIES = {
     title: "Joyas",
     text: "Detalles que hacen la diferencia. Aretes, collares, pulseras y accesorios delicados para completar tu estilo con un toque de brillo.",
   },
-  ropa: {
-    num: "03", accent: "gold", variant: "Talla o color",
-    title: "Ropa",
-    text: "Prendas cómodas y con estilo para cada momento. Piezas versátiles, actuales y favorecedoras, pensadas para que te veas y te sientas como quieres.",
-  },
 };
 
 const PAY_LABELS = { efectivo: "Efectivo", nequi: "Nequi" };

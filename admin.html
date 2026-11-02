@@ -203,7 +203,6 @@
                 <option value="">General</option>
                 <option value="maquillaje">Maquillaje</option>
                 <option value="joyas">Joyas</option>
-                <option value="ropa">Ropa</option>
               </select>
             </div>
             <div class="form-actions" style="align-self:end">
@@ -238,7 +237,6 @@
               <select id="p-category" required>
                 <option value="maquillaje">Maquillaje</option>
                 <option value="joyas">Joyas</option>
-                <option value="ropa">Ropa</option>
               </select>
             </div>
             <div class="field">
@@ -275,7 +273,7 @@
             </div>
             <fieldset class="wide variants-box">
               <legend>Tonos, tallas y variantes</legend>
-              <p class="muted small">Para productos con varios tonos (maquillaje), o ropa y joyas con tallas, colores o modelos. Si dejas el precio de una variante vacío, se usa el precio del producto. Si no agregas ninguna, el producto se vende tal cual. En cada fila, "Existencias" vacío significa sin control de inventario.</p>
+              <p class="muted small">Para productos con varios tonos (maquillaje), o joyas con colores o modelos. Si dejas el precio de una variante vacío, se usa el precio del producto. Si no agregas ninguna, el producto se vende tal cual. En cada fila, "Existencias" vacío significa sin control de inventario.</p>
               <div id="variants-list" class="variants-list"></div>
               <div class="variants-actions">
                 <button id="variant-add" class="btn" type="button">+ Agregar uno</button>
@@ -302,14 +300,13 @@
           <div class="panel-head">
             <div><p class="eyebrow">COLECCIONES</p><h2>Subsecciones</h2></div>
           </div>
-          <p class="muted small">Organiza cada colección en subsecciones (por ejemplo, Maquillaje › Labios, Ojos, Rostro; Joyas › Aretes, Collares; Ropa › Blusas, Vestidos). En la tienda aparecen como filtros dentro de la colección. Una subsección sin productos visibles no se muestra al público. Luego asigna los productos desde Agregar producto o Editar.</p>
+          <p class="muted small">Organiza cada colección en subsecciones (por ejemplo, Maquillaje › Labios, Ojos, Rostro; Joyas › Aretes, Collares). En la tienda aparecen como filtros dentro de la colección. Una subsección sin productos visibles no se muestra al público. Luego asigna los productos desde Agregar producto o Editar.</p>
           <form id="sub-form" class="sub-form" novalidate>
             <div class="field">
               <label for="sub-category">Colección</label>
               <select id="sub-category">
                 <option value="maquillaje">Maquillaje</option>
                 <option value="joyas">Joyas</option>
-                <option value="ropa">Ropa</option>
               </select>
             </div>
             <div class="field">
@@ -325,11 +322,10 @@
 
       <!-- INVENTARIO -->
       <section id="tab-inventario" class="tab-panel" role="tabpanel" hidden>
-        <div class="stats six">
+        <div class="stats five">
           <article class="stat"><span>Total</span><strong id="stat-total">0</strong></article>
           <article class="stat s-rose"><span>Maquillaje</span><strong id="stat-maquillaje">0</strong></article>
           <article class="stat s-champagne"><span>Joyas</span><strong id="stat-joyas">0</strong></article>
-          <article class="stat s-plum"><span>Ropa</span><strong id="stat-ropa">0</strong></article>
           <article class="stat"><span>Ocultos</span><strong id="stat-hidden">0</strong></article>
           <article class="stat"><span>Agotados</span><strong id="stat-soldout">0</strong></article>
         </div>
@@ -348,7 +344,6 @@
                 <option value="all">Todas</option>
                 <option value="maquillaje">Maquillaje</option>
                 <option value="joyas">Joyas</option>
-                <option value="ropa">Ropa</option>
               </select>
             </div>
           </div>
@@ -389,12 +384,6 @@
             <legend>Bloque 2 · Joyas</legend>
             <div class="field"><label for="s-joyas_title">Título</label><input id="s-joyas_title" type="text" maxlength="40"></div>
             <div class="field"><label for="s-joyas_text">Descripción</label><textarea id="s-joyas_text" rows="4" maxlength="400"></textarea></div>
-          </fieldset>
-
-          <fieldset>
-            <legend>Bloque 3 · Ropa</legend>
-            <div class="field"><label for="s-ropa_title">Título</label><input id="s-ropa_title" type="text" maxlength="40"></div>
-            <div class="field"><label for="s-ropa_text">Descripción</label><textarea id="s-ropa_text" rows="4" maxlength="400"></textarea></div>
           </fieldset>
 
           <fieldset>

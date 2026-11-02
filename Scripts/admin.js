@@ -15,7 +15,7 @@ async function api(path, opts = {}) {
   return { data, error: null };
 }
 
-const CATS = { maquillaje: "Maquillaje", joyas: "Joyas", ropa: "Ropa" };
+const CATS = { maquillaje: "Maquillaje", joyas: "Joyas" };
 const EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 const MAX_IMAGE = 50 * 1024 * 1024;
 const TZ = { timeZone: "America/Bogota" };
@@ -855,7 +855,7 @@ $("exp-period").addEventListener("change", renderExpenses);
 // =====================================================================
 // PERSONALIZACIÓN
 // =====================================================================
-const DEFAULTS = {"hero_title_1": "Pensado para ellas,", "hero_title_2": "hecho para brillar.", "hero_text": "Maquillaje, joyas y ropa seleccionados con cariño para realzar tu belleza y tu estilo, todos los días.", "maquillaje_title": "Maquillaje", "maquillaje_text": "Color, brillo y cuidado para cada look. Labiales, sombras, bases y todo lo que necesitas para sentirte increíble, del día a día a las ocasiones especiales.", "joyas_title": "Joyas", "joyas_text": "Detalles que hacen la diferencia. Aretes, collares, pulseras y accesorios delicados para completar tu estilo con un toque de brillo.", "ropa_title": "Ropa", "ropa_text": "Prendas cómodas y con estilo para cada momento. Piezas versátiles, actuales y favorecedoras, pensadas para que te veas y te sientas como quieres.", "visit_text": "Escríbenos por WhatsApp para consultar disponibilidad, precios y envíos."};
+const DEFAULTS = {"hero_title_1": "Pensado para ellas,", "hero_title_2": "hecho para brillar.", "hero_text": "Maquillaje y joyas seleccionados con cariño para realzar tu belleza y tu estilo, todos los días.", "maquillaje_title": "Maquillaje", "maquillaje_text": "Color, brillo y cuidado para cada look. Labiales, sombras, bases y todo lo que necesitas para sentirte increíble, del día a día a las ocasiones especiales.", "joyas_title": "Joyas", "joyas_text": "Detalles que hacen la diferencia. Aretes, collares, pulseras y accesorios delicados para completar tu estilo con un toque de brillo.", "visit_text": "Escríbenos por WhatsApp para consultar disponibilidad, precios y envíos."};
 DEFAULTS.whatsapp = WHATSAPP;
 DEFAULTS.color_rose = "#b44a6e";
 DEFAULTS.color_champagne = "#96692b";

@@ -175,13 +175,14 @@ input[type="color"] { height: 46px; padding: 4px; cursor: pointer; }
 
 /* ---------- Existencias y gastos ---------- */
 .stats.six { grid-template-columns: repeat(6, 1fr); }
+.stats.five { grid-template-columns: repeat(5, 1fr); }
 .out { color: var(--red); }
 .low { color: var(--champagne); }
 .stock-note { display: block; margin-top: 2px; font-size: .76rem; }
 .expense-form { margin-bottom: 24px; }
 .expense-form + .stats { margin-bottom: 18px; }
 @media (max-width: 800px) {
-  .stats.six { grid-template-columns: repeat(2, 1fr); }
+  .stats.six, .stats.five { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ---------- Venta en tienda ---------- */
