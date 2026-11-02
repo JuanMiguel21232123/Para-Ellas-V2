@@ -1,0 +1,44 @@
+/* Página de colección (se carga junto con index.css) */
+body[data-cat="maquillaje"] { --accent: var(--rose); }
+body[data-cat="joyas"] { --accent: var(--champagne); }
+body[data-cat="ropa"] { --accent: var(--plum); }
+body { --accent: var(--rose); }
+
+.cat-hero { padding: clamp(44px, 8vw, 80px) 0 20px; }
+.cat-hero .back { display: inline-block; margin-bottom: 26px; font-size: .84rem; letter-spacing: .06em; color: var(--muted); transition: .2s; }
+.cat-hero .back:hover { color: var(--accent); }
+.cat-hero .eyebrow { color: var(--accent); }
+.cat-hero h1 { font-size: clamp(3rem, 8vw, 5.2rem); margin: 12px 0 18px; padding-bottom: 20px; position: relative; font-style: italic; }
+.cat-hero h1::after { content: ""; position: absolute; left: 0; bottom: 0; width: 72px; height: 2px; border-radius: 2px; background: var(--accent); }
+.cat-hero p#cat-text { max-width: 640px; color: var(--muted); font-size: 1.05rem; }
+
+.cat-body { padding-bottom: 90px; }
+.cat-switch { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 24px; }
+.cat-switch .tab { display: inline-block; }
+.cat-switch .tab[aria-current="true"] { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+
+.search { max-width: 360px; margin-bottom: 26px; }
+
+.card:hover { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.card .meta { font-size: .74rem; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 500; margin-top: 4px; }
+.variant-field { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+.variant-field label { font-size: .76rem; letter-spacing: .05em; color: var(--muted); }
+.variant-field select { width: 100%; padding: 10px 12px; background: var(--field); border: 1px solid var(--line); border-radius: 12px; color: var(--text); font: inherit; font-size: .9rem; }
+.variant-field select:focus { outline: none; border-color: var(--accent); }
+.variant-field select.invalid { border-color: #c4443d; }
+.card button.add { border-color: var(--accent); color: var(--accent); }
+.card button.add:hover { background: var(--accent); color: #fff; }
+
+.card.soldout .img { opacity: .45; }
+.card.soldout .price { color: var(--muted); }
+.card button.add:disabled { opacity: .55; cursor: not-allowed; border-color: var(--line); color: var(--muted); }
+.card button.add:disabled:hover { background: none; border-color: var(--line); color: var(--muted); }
+
+/* Subsecciones de la colección */
+.sub-switch { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 24px; }
+.sub-chip { padding: 8px 20px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font: 400 .86rem var(--sans); cursor: pointer; transition: .2s; }
+.sub-chip:hover { color: var(--accent); border-color: var(--accent); }
+.sub-chip[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.group-title { grid-column: 1 / -1; margin-top: 18px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font: italic 600 1.8rem var(--serif); }
+.group-title::before { content: ""; display: inline-block; width: 22px; height: 2px; margin-right: 12px; vertical-align: middle; background: var(--accent); }
+.group-title:first-child { margin-top: 0; }

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#fcf7f4">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Administración | Para ellas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600;1,700&family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="Styles/admin.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="index.html">Para <em>ellas</em><small>ADMIN</small></a>
+      <a class="public-link" href="index.html">Ver tienda</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- INICIO DE SESIÓN -->
+    <section id="login-view" class="login">
+      <div class="card login-card">
+        <p class="eyebrow">ACCESO RESTRINGIDO</p>
+        <h1>Bienvenido<span>.</span></h1>
+        <p class="muted">Inicia sesión para administrar Para ellas.</p>
+        <form id="login-form">
+          <div class="field">
+            <label for="email">Correo</label>
+            <input id="email" type="email" autocomplete="username" maxlength="150" required>
+          </div>
+          <div class="field">
+            <label for="password">Contraseña</label>
+            <input id="password" type="password" autocomplete="current-password" maxlength="200" required>
+          </div>
+          <button id="login-button" class="btn solid full" type="submit">Iniciar sesión</button>
+          <p id="login-message" class="msg" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- PANEL -->
+    <section id="dashboard-view" hidden>
+      <div class="welcome">
+        <div>
+          <p class="eyebrow">PANEL DE CONTROL</p>
+          <h1 id="welcome-name">Administración<span>.</span></h1>
+        </div>
+        <div class="actions">
+          <span id="last-updated" class="muted small"></span>
+          <button id="refresh-button" class="btn" type="button">Actualizar</button>
+          <button id="logout-button" class="btn" type="button">Cerrar sesión</button>
+        </div>
+      </div>
+
+      <div id="panel-nav">
+        <nav class="tabs main-tabs" role="tablist" aria-label="Secciones del panel">
+          <button class="tab main-tab" role="tab" data-section="ventas" aria-selected="true">Ventas <span id="orders-badge-main" class="count" hidden>0</span></button>
+          <button class="tab main-tab" role="tab" data-section="finanzas" aria-selected="false">Finanzas</button>
+          <button class="tab main-tab" role="tab" data-section="productos" aria-selected="false">Productos</button>
+          <button class="tab main-tab" role="tab" data-section="tienda" aria-selected="false">Mi tienda</button>
+        </nav>
+        <nav class="subtabs" role="tablist" aria-label="Ventas" data-section="ventas">
+          <button class="sub-tab" role="tab" data-tab="pedidos" aria-selected="true">Pedidos <span id="orders-badge" class="count" hidden>0</span></button>
+          <button class="sub-tab" role="tab" data-tab="venta" aria-selected="false">Venta en tienda</button>
+        </nav>
+        <nav class="subtabs" role="tablist" aria-label="Finanzas" data-section="finanzas" hidden>
+          <button class="sub-tab" role="tab" data-tab="ganancias" aria-selected="false">Ganancias</button>
+          <button class="sub-tab" role="tab" data-tab="gastos" aria-selected="false">Gastos</button>
+        </nav>
+        <nav class="subtabs" role="tablist" aria-label="Productos" data-section="productos" hidden>
+          <button class="sub-tab" role="tab" data-tab="inventario" aria-selected="false">Inventario</button>
+          <button class="sub-tab" role="tab" data-tab="agregar" aria-selected="false" id="tab-btn-agregar">Agregar producto</button>
+          <button class="sub-tab" role="tab" data-tab="subsecciones" aria-selected="false">Subsecciones</button>
+        </nav>
+        <nav class="subtabs single" role="tablist" aria-label="Mi tienda" data-section="tienda" hidden>
+          <button class="sub-tab" role="tab" data-tab="personalizacion" aria-selected="false">Personalización</button>
+        </nav>
+      </div>
+
+      <!-- PEDIDOS -->
+      <section id="tab-pedidos" class="tab-panel" role="tabpanel">
+        <div class="card panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">VENTAS</p><h2>Pedidos</h2></div>
+          </div>
+          <div class="toolbar">
+            <div class="field">
+              <label for="order-search">Buscar</label>
+              <input id="order-search" type="search" placeholder="Código, cliente o teléfono">
+            </div>
+            <div class="field">
+              <label for="order-filter">Estado</label>
+              <select id="order-filter">
+                <option value="all">Todos</option>
+                <option value="pending">Pendientes</option>
+                <option value="confirmed">Confirmados</option>
+                <option value="delivered">Entregados</option>
+                <option value="cancelled">Cancelados</option>
+              </select>
+            </div>
+          </div>
+          <p id="orders-message" class="msg" role="status" aria-live="polite"></p>
+          <p id="orders-loading" class="empty">Cargando pedidos…</p>
+          <p id="orders-empty" class="empty" hidden>No hay pedidos para mostrar.</p>
+          <div id="orders-list" class="orders-list"></div>
+        </div>
+      </section>
+
+      <!-- VENTA EN TIENDA -->
+      <section id="tab-venta" class="tab-panel" role="tabpanel" hidden>
+        <form id="sale-form" class="card panel" novalidate>
+          <div class="panel-head">
+            <div><p class="eyebrow">CAJA</p><h2>Venta en tienda</h2></div>
+          </div>
+          <p class="muted small">Registra lo que se pagó en el mostrador. Queda como pedido entregado, descuenta las existencias y cuenta en Ganancias. El precio de cada línea se llena solo, pero puedes cambiarlo si cobraste otro valor.</p>
+          <div id="sale-lines" class="sale-lines"></div>
+          <div class="form-actions">
+            <button id="sale-add" class="btn" type="button">+ Agregar producto</button>
+          </div>
+          <div class="product-form" style="margin-top:18px">
+            <div class="field">
+              <label for="sale-payment">Método de pago</label>
+              <select id="sale-payment">
+                <option value="efectivo">Efectivo</option>
+                <option value="nequi">Nequi</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="sale-notes">Notas (opcional)</label>
+              <input id="sale-notes" type="text" maxlength="300" placeholder="Ej. descuento por compra de 2">
+            </div>
+          </div>
+          <p class="sale-total"><span class="muted">Total cobrado</span><strong id="sale-total">$ 0</strong></p>
+          <div class="form-actions">
+            <button id="sale-save" class="btn solid" type="submit">Registrar venta</button>
+          </div>
+          <p id="sale-message" class="msg" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <!-- GANANCIAS -->
+      <section id="tab-ganancias" class="tab-panel" role="tabpanel" hidden>
+        <div class="card panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">FINANZAS</p><h2>Ganancias</h2></div>
+            <div class="field period">
+              <label for="earn-period">Periodo</label>
+              <select id="earn-period">
+                <option value="week">Esta semana</option>
+                <option value="biweekly">Esta quincena</option>
+                <option value="month" selected>Este mes</option>
+                <option value="year">Este año</option>
+              </select>
+            </div>
+          </div>
+          <div class="stats">
+            <article class="stat s-rose"><span>Total vendido</span><strong id="earn-total">$ 0</strong></article>
+            <article class="stat"><span>Pedidos entregados</span><strong id="earn-count">0</strong></article>
+            <article class="stat"><span>Valor promedio</span><strong id="earn-avg">$ 0</strong></article>
+            <article class="stat s-plum"><span>Gastos</span><strong id="earn-expenses">$ 0</strong></article>
+            <article class="stat s-ok"><span>Ventas − gastos</span><strong id="earn-balance">$ 0</strong></article>
+          </div>
+          <h3 class="sub">Por categoría</h3>
+          <div id="earn-cats" class="bars"></div>
+          <p class="muted small">Solo cuentan los pedidos marcados como <strong>Entregado</strong>, según la fecha en que se entregaron. Los gastos son los que registras en la pestaña <strong>Gastos</strong>, según su fecha.</p>
+        </div>
+      </section>
+
+      <!-- GASTOS -->
+      <section id="tab-gastos" class="tab-panel" role="tabpanel" hidden>
+        <div class="card panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">COMPRAS</p><h2>Gastos</h2></div>
+            <div class="field period">
+              <label for="exp-period">Periodo</label>
+              <select id="exp-period">
+                <option value="week">Esta semana</option>
+                <option value="biweekly">Esta quincena</option>
+                <option value="month" selected>Este mes</option>
+                <option value="year">Este año</option>
+              </select>
+            </div>
+          </div>
+          <form id="expense-form" class="product-form expense-form" novalidate>
+            <div class="field">
+              <label for="e-date">Fecha</label>
+              <input id="e-date" type="date" required>
+            </div>
+            <div class="field">
+              <label for="e-amount">Monto (COP)</label>
+              <input id="e-amount" type="number" min="1" step="1" inputmode="numeric" placeholder="150000" required>
+            </div>
+            <div class="field wide">
+              <label for="e-description">En qué se gastó</label>
+              <input id="e-description" type="text" minlength="2" maxlength="200" placeholder="Compra de 30 labiales a proveedor" required>
+            </div>
+            <div class="field">
+              <label for="e-category">Categoría (opcional)</label>
+              <select id="e-category">
+                <option value="">General</option>
+                <option value="maquillaje">Maquillaje</option>
+                <option value="joyas">Joyas</option>
+                <option value="ropa">Ropa</option>
+              </select>
+            </div>
+            <div class="form-actions" style="align-self:end">
+              <button id="expense-save" class="btn solid" type="submit">Guardar gasto</button>
+            </div>
+            <p id="expense-message" class="msg wide" role="status" aria-live="polite"></p>
+          </form>
+          <div class="stats three">
+            <article class="stat s-plum"><span>Total gastado</span><strong id="exp-total">$ 0</strong></article>
+            <article class="stat"><span>Registros</span><strong id="exp-count">0</strong></article>
+            <article class="stat"><span>Promedio por gasto</span><strong id="exp-avg">$ 0</strong></article>
+          </div>
+          <p id="expenses-empty" class="empty" hidden>No hay gastos en este periodo.</p>
+          <div id="expenses-table" class="table-wrap" hidden>
+            <table>
+              <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Monto</th><th>Acciones</th></tr></thead>
+              <tbody id="expenses-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- AGREGAR PRODUCTO -->
+      <section id="tab-agregar" class="tab-panel" role="tabpanel" hidden>
+        <div class="card panel" id="form-panel">
+          <div class="panel-head">
+            <div><p class="eyebrow" id="form-eyebrow">NUEVO</p><h2 id="form-title">Agregar producto</h2></div>
+          </div>
+          <form id="product-form" class="product-form" novalidate>
+            <div class="field">
+              <label for="p-category">Categoría</label>
+              <select id="p-category" required>
+                <option value="maquillaje">Maquillaje</option>
+                <option value="joyas">Joyas</option>
+                <option value="ropa">Ropa</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="p-price">Precio (COP)</label>
+              <input id="p-price" type="number" min="0" step="1" inputmode="numeric" placeholder="25000" required>
+            </div>
+            <div class="field wide">
+              <label for="p-subcategory">Subsección (opcional)</label>
+              <select id="p-subcategory">
+                <option value="">Sin subsección</option>
+              </select>
+              <p class="muted small">Las subsecciones se crean en Productos › Subsecciones y dependen de la categoría elegida.</p>
+            </div>
+            <div class="field wide">
+              <label for="p-name">Nombre</label>
+              <input id="p-name" type="text" minlength="2" maxlength="120" required>
+            </div>
+            <div class="field wide">
+              <label for="p-description">Descripción (opcional)</label>
+              <textarea id="p-description" rows="3" maxlength="500"></textarea>
+            </div>
+            <div class="field wide">
+              <label for="p-stock">Existencias (unidades disponibles)</label>
+              <input id="p-stock" type="number" min="0" step="1" inputmode="numeric" placeholder="Vacío = sin control de inventario">
+              <p class="muted small">Si el producto tiene tonos o variantes, las existencias se llevan en cada variante (este campo se ignora). Con 0 la tienda muestra "Agotado".</p>
+            </div>
+            <div class="field wide">
+              <label for="p-image">Foto (JPG, PNG o WebP, máximo 50 MB; se optimiza sola al subirla)</label>
+              <input id="p-image" type="file" accept="image/jpeg,image/png,image/webp">
+              <div id="image-current" class="image-current" hidden>
+                <img id="image-preview" alt="Foto actual" class="thumb">
+                <label class="check"><input id="p-remove-image" type="checkbox"> Quitar la foto actual</label>
+              </div>
+            </div>
+            <fieldset class="wide variants-box">
+              <legend>Tonos, tallas y variantes</legend>
+              <p class="muted small">Para productos con varios tonos (maquillaje), o ropa y joyas con tallas, colores o modelos. Si dejas el precio de una variante vacío, se usa el precio del producto. Si no agregas ninguna, el producto se vende tal cual. En cada fila, "Existencias" vacío significa sin control de inventario.</p>
+              <div id="variants-list" class="variants-list"></div>
+              <div class="variants-actions">
+                <button id="variant-add" class="btn" type="button">+ Agregar uno</button>
+              </div>
+              <div class="field">
+                <label for="variants-bulk">Agregar varios a la vez (uno por línea)</label>
+                <textarea id="variants-bulk" rows="4" placeholder="Rosa nude&#10;Coral&#10;Vino"></textarea>
+                <div class="variants-actions"><button id="variants-bulk-add" class="btn" type="button">Añadir a la lista</button></div>
+              </div>
+            </fieldset>
+            <label class="check wide"><input id="p-active" type="checkbox" checked> Visible en la tienda</label>
+            <div class="form-actions wide">
+              <button id="save-button" class="btn solid" type="submit">Guardar producto</button>
+              <button id="cancel-edit" class="btn" type="button" hidden>Cancelar edición</button>
+            </div>
+            <p id="form-message" class="msg wide" role="status" aria-live="polite"></p>
+          </form>
+        </div>
+      </section>
+
+      <!-- SUBSECCIONES -->
+      <section id="tab-subsecciones" class="tab-panel" role="tabpanel" hidden>
+        <div class="card panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">COLECCIONES</p><h2>Subsecciones</h2></div>
+          </div>
+          <p class="muted small">Organiza cada colección en subsecciones (por ejemplo, Maquillaje › Labios, Ojos, Rostro; Joyas › Aretes, Collares; Ropa › Blusas, Vestidos). En la tienda aparecen como filtros dentro de la colección. Una subsección sin productos visibles no se muestra al público. Luego asigna los productos desde Agregar producto o Editar.</p>
+          <form id="sub-form" class="sub-form" novalidate>
+            <div class="field">
+              <label for="sub-category">Colección</label>
+              <select id="sub-category">
+                <option value="maquillaje">Maquillaje</option>
+                <option value="joyas">Joyas</option>
+                <option value="ropa">Ropa</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="sub-name">Nombre de la subsección</label>
+              <input id="sub-name" type="text" maxlength="60" placeholder="Ej. Desechables" required>
+            </div>
+            <button id="sub-save" class="btn solid" type="submit">Crear subsección</button>
+          </form>
+          <p id="sub-message" class="msg" role="status" aria-live="polite"></p>
+          <div id="subs-groups"></div>
+        </div>
+      </section>
+
+      <!-- INVENTARIO -->
+      <section id="tab-inventario" class="tab-panel" role="tabpanel" hidden>
+        <div class="stats six">
+          <article class="stat"><span>Total</span><strong id="stat-total">0</strong></article>
+          <article class="stat s-rose"><span>Maquillaje</span><strong id="stat-maquillaje">0</strong></article>
+          <article class="stat s-champagne"><span>Joyas</span><strong id="stat-joyas">0</strong></article>
+          <article class="stat s-plum"><span>Ropa</span><strong id="stat-ropa">0</strong></article>
+          <article class="stat"><span>Ocultos</span><strong id="stat-hidden">0</strong></article>
+          <article class="stat"><span>Agotados</span><strong id="stat-soldout">0</strong></article>
+        </div>
+        <div class="card panel">
+          <div class="panel-head">
+            <div><p class="eyebrow">CATÁLOGO</p><h2>Todos los productos</h2></div>
+          </div>
+          <div class="toolbar">
+            <div class="field">
+              <label for="search">Buscar</label>
+              <input id="search" type="search" placeholder="Nombre del producto">
+            </div>
+            <div class="field">
+              <label for="filter-category">Categoría</label>
+              <select id="filter-category">
+                <option value="all">Todas</option>
+                <option value="maquillaje">Maquillaje</option>
+                <option value="joyas">Joyas</option>
+                <option value="ropa">Ropa</option>
+              </select>
+            </div>
+          </div>
+          <p id="list-message" class="msg" role="status" aria-live="polite"></p>
+          <p id="loading-state" class="empty">Cargando productos…</p>
+          <p id="empty-state" class="empty" hidden>No hay productos para mostrar.</p>
+          <div id="table-wrap" class="table-wrap" hidden>
+            <table>
+              <thead><tr><th>Producto</th><th>Categoría</th><th>Precio</th><th>Existencias</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody id="products-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- PERSONALIZACIÓN -->
+      <section id="tab-personalizacion" class="tab-panel" role="tabpanel" hidden>
+        <form id="settings-form" class="card panel settings">
+          <div class="panel-head">
+            <div><p class="eyebrow">TU PÁGINA</p><h2>Personalización</h2></div>
+          </div>
+          <p class="muted small">Cambia los textos y colores de la tienda. Si dejas un campo vacío, se usa el texto original.</p>
+
+          <fieldset>
+            <legend>Portada</legend>
+            <div class="field"><label for="s-hero_title_1">Título, primera línea</label><input id="s-hero_title_1" type="text" maxlength="60"></div>
+            <div class="field"><label for="s-hero_title_2">Título, segunda línea (en rosa)</label><input id="s-hero_title_2" type="text" maxlength="60"></div>
+            <div class="field"><label for="s-hero_text">Texto de presentación</label><textarea id="s-hero_text" rows="2" maxlength="300"></textarea></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Bloque 1 · Maquillaje</legend>
+            <div class="field"><label for="s-maquillaje_title">Título</label><input id="s-maquillaje_title" type="text" maxlength="40"></div>
+            <div class="field"><label for="s-maquillaje_text">Descripción</label><textarea id="s-maquillaje_text" rows="4" maxlength="400"></textarea></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Bloque 2 · Joyas</legend>
+            <div class="field"><label for="s-joyas_title">Título</label><input id="s-joyas_title" type="text" maxlength="40"></div>
+            <div class="field"><label for="s-joyas_text">Descripción</label><textarea id="s-joyas_text" rows="4" maxlength="400"></textarea></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Bloque 3 · Ropa</legend>
+            <div class="field"><label for="s-ropa_title">Título</label><input id="s-ropa_title" type="text" maxlength="40"></div>
+            <div class="field"><label for="s-ropa_text">Descripción</label><textarea id="s-ropa_text" rows="4" maxlength="400"></textarea></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Visítanos y contacto</legend>
+            <div class="field"><label for="s-visit_text">Texto de la sección</label><textarea id="s-visit_text" rows="2" maxlength="300"></textarea></div>
+            <div class="field"><label for="s-whatsapp">WhatsApp (con indicativo, solo números)</label><input id="s-whatsapp" type="tel" inputmode="numeric" maxlength="20" placeholder="573001234567"></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Colores</legend>
+            <div class="colors">
+              <div class="field"><label for="s-color_rose">Rosa principal</label><input id="s-color_rose" type="color"></div>
+              <div class="field"><label for="s-color_champagne">Champagne</label><input id="s-color_champagne" type="color"></div>
+              <div class="field"><label for="s-color_plum">Ciruela</label><input id="s-color_plum" type="color"></div>
+            </div>
+          </fieldset>
+
+          <div class="form-actions">
+            <button id="settings-save" class="btn solid" type="submit">Guardar cambios</button>
+            <button id="settings-reset" class="btn" type="button">Restaurar todo</button>
+          </div>
+          <p id="settings-message" class="msg" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </section>
+  </main>
+
+  <footer class="foot"><p>PARA ELLAS · Administración privada</p></footer>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="Scripts/config.js"></script>
+  <script src="Scripts/admin.js"></script>
+</body>
+</html>

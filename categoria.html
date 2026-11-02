@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#fcf7f4">
+  <meta name="description" content="Catálogo de Para ellas: maquillaje, joyas y ropa para mujer.">
+  <title>Colección | Para ellas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600;1,700&family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="Styles/index.css">
+  <link rel="stylesheet" href="Styles/categoria.css">
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="brand" href="index.html">Para <em>ellas</em></a>
+      <nav aria-label="Navegación principal">
+        <a href="index.html">Inicio</a>
+        <a href="index.html#colecciones">Colecciones</a>
+        <a href="index.html#contacto">Contacto</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="cat-hero wrap">
+      <a class="back" href="index.html#colecciones">← Todas las colecciones</a>
+      <p class="eyebrow" id="cat-eyebrow">COLECCIÓN</p>
+      <h1 id="cat-title">Colección</h1>
+      <p id="cat-text"></p>
+    </section>
+
+    <section class="wrap cat-body">
+      <nav id="cat-switch" class="cat-switch" aria-label="Otras colecciones"></nav>
+      <div id="sub-switch" class="sub-switch" role="group" aria-label="Subsecciones" hidden></div>
+      <div class="field search">
+        <label for="search">Buscar</label>
+        <input id="search" type="search" placeholder="Producto, marca o tono" maxlength="60" autocomplete="off">
+      </div>
+      <div id="products" class="grid" aria-live="polite"><p class="empty">Cargando catálogo…</p></div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <a class="brand" href="index.html">Para <em>ellas</em></a>
+      <p>Maquillaje, joyas y ropa para mujer · Colombia</p>
+      <p>&copy; <span id="year"></span> Para ellas. Todos los derechos reservados.</p>
+    </div>
+  </footer>
+
+  <script src="Scripts/config.js"></script>
+  <script src="Scripts/shop.js"></script>
+  <script src="Scripts/categoria.js"></script>
+</body>
+</html>
