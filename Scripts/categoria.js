@@ -12,7 +12,8 @@ function setupHeader() {
     `<a class="tab" href="categoria.html?c=${encodeURIComponent(key)}" aria-current="${key === CAT}">${esc(c.title)}</a>`).join("");
 }
 
-const optionsWord = (n) => INFO.variant === "Tono" ? (n === 1 ? "tono" : "tonos") : (n === 1 ? "opción" : "opciones");
+const variantLabel = (p) => p.variant_label || INFO.variant;
+const optionsWord = (p, n) => variantLabel(p) === "Tono" ? (n === 1 ? "tono" : "tonos") : (n === 1 ? "opción" : "opciones");
 
 function priceLabel(p, vid) {
   const opts = variantsOf(p);
@@ -30,11 +31,11 @@ function card(p) {
   const img = /^https?:\/\//.test(p.image_url || "")
     ? `<img src="${esc(p.image_url)}" alt="${esc(p.name)}" width="480" height="600" loading="lazy" decoding="async">` : INITIALS;
   const select = opts.length ? `
-    <p class="meta">${opts.length} ${optionsWord(opts.length)}</p>
+    <p class="meta">${opts.length} ${optionsWord(p, opts.length)}</p>
     <div class="variant-field">
-      <label for="v-${p.id}">${esc(INFO.variant)}</label>
+      <label for="v-${p.id}">${esc(variantLabel(p))}</label>
       <select id="v-${p.id}" class="variant">
-        <option value="">Selecciona ${esc(INFO.variant.toLowerCase())}</option>
+        <option value="">Selecciona ${esc(variantLabel(p).toLowerCase())}</option>
         ${opts.map((o) => `<option value="${o.id}"${o.sold_out ? " disabled" : ""}>${esc(o.name)}${o.price != null && o.price !== p.price ? " · " + money(o.price) : ""}${o.sold_out ? " · Agotado" : ""}</option>`).join("")}
       </select>
     </div>` : "";

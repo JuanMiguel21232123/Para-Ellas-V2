@@ -699,6 +699,7 @@ function startEdit(p) {
   $("p-description").value = p.description || "";
   $("p-active").checked = p.active;
   $("p-stock").value = p.stock ?? "";
+  $("p-variant-label").value = p.variant_label || "";
   $("p-image").value = "";
   $("p-remove-image").checked = false;
   fillVariants(p.product_variants || []);
@@ -738,6 +739,7 @@ $("product-form").addEventListener("submit", async (e) => {
       subcategory_id: $("p-subcategory").value || null,
       name, description: desc || null, price, image_url,
       active: $("p-active").checked, stock, variants,
+      variant_label: $("p-variant-label").value.trim() || null,
     };
     const { error } = editing
       ? await api("admin/products/" + editing.id, { method: "PATCH", body: JSON.stringify(body) })

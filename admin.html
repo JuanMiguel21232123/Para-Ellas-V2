@@ -270,6 +270,11 @@
             <fieldset class="wide variants-box">
               <legend>Tonos, tallas y variantes</legend>
               <p class="muted small">Para productos con varios tonos (maquillaje), o joyas con colores o modelos. Si dejas el precio de una variante vacío, se usa el precio del producto. Si no agregas ninguna, el producto se vende tal cual. En cada fila, "Existencias" vacío significa sin control de inventario.</p>
+              <div class="field">
+                <label for="p-variant-label">Cómo se llaman las variantes de este producto (opcional)</label>
+                <input id="p-variant-label" type="text" maxlength="30" list="p-variant-label-options" placeholder="Vacío = usa el nombre de la categoría">
+                <datalist id="p-variant-label-options"><option value="Tono"><option value="Modelo"><option value="Talla"><option value="Color"><option value="Opción"></datalist>
+              </div>
               <div id="variants-list" class="variants-list"></div>
               <div class="variants-actions">
                 <button id="variant-add" class="btn" type="button">+ Agregar uno</button>

@@ -80,7 +80,7 @@ async function requireAdmin(request, env) {
 // =====================================================================
 async function getProducts(env) {
   const { rows: products } = await turso(env,
-    "SELECT id, category, subcategory_id, name, description, price, image_url, stock FROM products WHERE active = 1 ORDER BY created_at DESC");
+    "SELECT id, category, subcategory_id, name, description, price, image_url, stock, variant_label FROM products WHERE active = 1 ORDER BY created_at DESC");
   const { rows: variants } = await turso(env,
     "SELECT id, product_id, name, price, stock FROM product_variants WHERE active = 1 ORDER BY id");
   const byProduct = {};
@@ -89,7 +89,7 @@ async function getProducts(env) {
   }));
   return json(products.map((p) => ({
     id: p.id, category: p.category, subcategory_id: p.subcategory_id, name: p.name, description: p.description,
-    price: p.price, image_url: p.image_url, sold_out: p.stock != null && p.stock <= 0,
+    price: p.price, image_url: p.image_url, sold_out: p.stock != null && p.stock <= 0, variant_label: p.variant_label || null,
     product_variants: byProduct[p.id] || [],
   })));
 }
@@ -410,7 +410,7 @@ async function deleteCategory(request, env, slug) {
 async function getAdminProducts(request, env) {
   if (!(await requireAdmin(request, env))) return err("auth", 401);
   const { rows: products } = await turso(env,
-    "SELECT id, category, subcategory_id, name, description, price, image_url, stock, active FROM products ORDER BY created_at DESC");
+    "SELECT id, category, subcategory_id, name, description, price, image_url, stock, active, variant_label FROM products ORDER BY created_at DESC");
   const { rows: variants } = await turso(env,
     "SELECT id, product_id, name, price, stock, active FROM product_variants ORDER BY id");
   const byProduct = {};
@@ -426,6 +426,7 @@ async function validProductBody(env, b) {
   if (name.length < 2) return "data";
   const price = Number(b.price);
   if (!Number.isInteger(price) || price < 0) return "data";
+  if (String(b.variant_label || "").trim().length > 30) return "data";
   return null;
 }
 
@@ -437,9 +438,9 @@ async function createProduct(request, env) {
   if (bad) return err(bad);
 
   const { lastInsertRowid: id } = await turso(env,
-    `INSERT INTO products (category, subcategory_id, name, description, price, image_url, active, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (category, subcategory_id, name, description, price, image_url, active, stock, variant_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [b.category, b.subcategory_id || null, b.name.trim(), b.description || "", Number(b.price), b.image_url || null,
-      b.active === false ? 0 : 1, b.stock == null ? null : Number(b.stock)]);
+      b.active === false ? 0 : 1, b.stock == null ? null : Number(b.stock), String(b.variant_label || "").trim() || null]);
 
   for (const v of Array.isArray(b.variants) ? b.variants : []) {
     await turso(env, "INSERT INTO product_variants (product_id, name, price, stock, active) VALUES (?, ?, ?, ?, ?)",
@@ -460,9 +461,9 @@ async function updateProduct(request, env, id) {
   const oldImage = cur[0].image_url;
 
   await turso(env,
-    `UPDATE products SET category = ?, subcategory_id = ?, name = ?, description = ?, price = ?, image_url = ?, active = ?, stock = ? WHERE id = ?`,
+    `UPDATE products SET category = ?, subcategory_id = ?, name = ?, description = ?, price = ?, image_url = ?, active = ?, stock = ?, variant_label = ? WHERE id = ?`,
     [b.category, b.subcategory_id || null, b.name.trim(), b.description || "", Number(b.price), b.image_url || null,
-      b.active === false ? 0 : 1, b.stock == null ? null : Number(b.stock), id]);
+      b.active === false ? 0 : 1, b.stock == null ? null : Number(b.stock), String(b.variant_label || "").trim() || null, id]);
 
   if (oldImage && oldImage !== (b.image_url || null)) await deleteImageByUrl(env, oldImage);
 
