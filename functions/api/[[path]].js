@@ -85,11 +85,11 @@ async function getProducts(env) {
     "SELECT id, product_id, name, price, stock FROM product_variants WHERE active = 1 ORDER BY id");
   const byProduct = {};
   variants.forEach((v) => (byProduct[v.product_id] ||= []).push({
-    id: v.id, name: v.name, price: v.price, active: true, sold_out: v.stock != null && v.stock <= 0,
+    id: v.id, name: v.name, price: v.price, active: true, stock: v.stock, sold_out: v.stock != null && v.stock <= 0,
   }));
   return json(products.map((p) => ({
     id: p.id, category: p.category, subcategory_id: p.subcategory_id, name: p.name, description: p.description,
-    price: p.price, image_url: p.image_url, sold_out: p.stock != null && p.stock <= 0, variant_label: p.variant_label || null,
+    price: p.price, image_url: p.image_url, stock: p.stock, sold_out: p.stock != null && p.stock <= 0, variant_label: p.variant_label || null,
     product_variants: byProduct[p.id] || [],
   })));
 }

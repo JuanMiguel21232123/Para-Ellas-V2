@@ -14,6 +14,7 @@ function setupHeader() {
 
 const variantLabel = (p) => p.variant_label || INFO.variant;
 const optionsWord = (p, n) => variantLabel(p) === "Tono" ? (n === 1 ? "tono" : "tonos") : (n === 1 ? "opción" : "opciones");
+const stockWord = (n) => n === 1 ? "Queda 1" : `Quedan ${n}`;
 
 function priceLabel(p, vid) {
   const opts = variantsOf(p);
@@ -36,9 +37,9 @@ function card(p) {
       <label for="v-${p.id}">${esc(variantLabel(p))}</label>
       <select id="v-${p.id}" class="variant">
         <option value="">Selecciona ${esc(variantLabel(p).toLowerCase())}</option>
-        ${opts.map((o) => `<option value="${o.id}"${o.sold_out ? " disabled" : ""}>${esc(o.name)}${o.price != null && o.price !== p.price ? " · " + money(o.price) : ""}${o.sold_out ? " · Agotado" : ""}</option>`).join("")}
+        ${opts.map((o) => `<option value="${o.id}"${o.sold_out ? " disabled" : ""}>${esc(o.name)}${o.price != null && o.price !== p.price ? " · " + money(o.price) : ""}${o.sold_out ? " · Agotado" : (o.stock != null ? " · " + stockWord(o.stock) : "")}</option>`).join("")}
       </select>
-    </div>` : "";
+    </div>` : (!out && p.stock != null && p.stock > 0 ? `<p class="meta">${stockWord(p.stock)}</p>` : "");
   return `
     <article class="card${out ? " soldout" : ""}" data-id="${p.id}">
       <div class="img">${img}</div>
