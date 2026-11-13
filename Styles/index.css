@@ -70,7 +70,8 @@ section.pad { padding: 20px 0 90px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 22px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; transition: box-shadow .3s, transform .3s; }
 .card:hover { box-shadow: var(--shadow); transform: translateY(-3px); }
-.card .img { aspect-ratio: 4 / 5; display: grid; place-items: center; background: var(--blush); font: italic 600 2.6rem var(--serif); color: var(--rose); overflow: hidden; }
+/* 4:5 es el tamaño inicial (antes de que cargue la foto) y el de los productos sin foto; fitPhoto() en shop.js lo ajusta a cada foto real. */
+.card .img { aspect-ratio: 4 / 5; display: grid; place-items: center; background: var(--blush); font: italic 600 2.6rem var(--serif); color: var(--rose); overflow: hidden; transition: aspect-ratio .15s ease; }
 .card img { width: 100%; height: 100%; object-fit: contain; }
 .card .body { padding: 18px 18px 20px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .card h4 { font: 600 1.4rem var(--serif); line-height: 1.15; }

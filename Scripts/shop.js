@@ -5,6 +5,15 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const money = (n) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
 
+// Ajusta el recuadro de una foto a su propia forma (vertical, horizontal o cuadrada) en vez de forzar siempre 4:5.
+// Se limita entre 3:4 y 4:3 para que las tarjetas del catálogo no queden demasiado altas ni demasiado anchas.
+function fitPhoto(img) {
+  const w = img.naturalWidth, h = img.naturalHeight;
+  if (!w || !h || !img.parentElement) return;
+  const ratio = Math.min(4 / 3, Math.max(3 / 4, w / h));
+  img.parentElement.style.aspectRatio = ratio;
+}
+
 async function api(path, opts = {}) {
   const res = await fetch("/api/" + path, {
     ...opts,

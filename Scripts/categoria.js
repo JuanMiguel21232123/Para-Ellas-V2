@@ -29,7 +29,7 @@ function card(p) {
   const opts = variantsOf(p);
   const out = soldOut(p);
   const img = /^https?:\/\//.test(p.image_url || "")
-    ? `<img src="${esc(p.image_url)}" alt="${esc(p.name)}" width="480" height="600" loading="lazy" decoding="async">` : INITIALS;
+    ? `<img src="${esc(p.image_url)}" alt="${esc(p.name)}" width="480" height="600" loading="lazy" decoding="async" onload="fitPhoto(this)">` : INITIALS;
   const select = opts.length ? `
     <p class="meta">${opts.length} ${optionsWord(p, opts.length)}</p>
     <div class="variant-field">
