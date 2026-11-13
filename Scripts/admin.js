@@ -55,8 +55,10 @@ $("panel-nav").addEventListener("click", (e) => {
 showTab("pedidos");
 
 // ---------- Fotos (R2 vía /api/admin/upload) ----------
-// Antes de subir, la foto se reduce (máx. 1200 px por lado) y se convierte a WebP.
-const MAX_SIDE = 1200, QUALITY = 0.82;
+// Antes de subir, la foto se reduce (máx. 640 px por lado) y se convierte a WebP.
+// 640px alcanza para verse nítida incluso en pantallas retina, porque en la tienda
+// la foto solo se muestra en tarjetas de catálogo (no hay página de producto con zoom).
+const MAX_SIDE = 640, QUALITY = 0.82;
 
 async function compressImage(file) {
   let bmp;
