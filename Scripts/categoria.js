@@ -29,7 +29,8 @@ function priceLabel(p, vid) {
 function card(p) {
   const opts = variantsOf(p);
   const out = soldOut(p);
-  const img = /^https?:\/\//.test(p.image_url || "")
+  const hasPhoto = /^https?:\/\//.test(p.image_url || "");
+  const img = hasPhoto
     ? `<img src="${esc(p.image_url)}" alt="${esc(p.name)}" width="480" height="600" loading="lazy" decoding="async" onload="fitPhoto(this)">` : INITIALS;
   const select = opts.length ? `
     <p class="meta">${opts.length} ${optionsWord(p, opts.length)}</p>
@@ -42,7 +43,7 @@ function card(p) {
     </div>` : (!out && p.stock != null && p.stock > 0 ? `<p class="meta">${stockWord(p.stock)}</p>` : "");
   return `
     <article class="card${out ? " soldout" : ""}" data-id="${p.id}">
-      <div class="img">${img}</div>
+      <div class="img${hasPhoto ? " zoomable" : ""}"${hasPhoto ? ` tabindex="0" role="button" aria-label="Ver foto de ${esc(p.name)} en grande"` : ""}>${img}</div>
       <div class="body">
         <h4>${esc(p.name)}</h4>
         <p class="desc">${esc(p.description)}</p>
@@ -118,6 +119,8 @@ $("#products").addEventListener("change", (e) => {
 });
 
 $("#products").addEventListener("click", (e) => {
+  const box = e.target.closest(".img.zoomable");
+  if (box) { const img = box.querySelector("img"); if (img) openLightbox(img.src, img.alt); return; }
   const btn = e.target.closest("button.add");
   if (!btn) return;
   const c = btn.closest(".card"), p = products.find((x) => String(x.id) === c.dataset.id);
@@ -127,6 +130,15 @@ $("#products").addEventListener("click", (e) => {
   addToCart(p.id, sel ? sel.value : null);
   btn.textContent = "Agregado ✓";
   setTimeout(() => (btn.textContent = "Agregar al pedido"), 1200);
+});
+
+$("#products").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const box = e.target.closest(".img.zoomable");
+  if (!box) return;
+  e.preventDefault();
+  const img = box.querySelector("img");
+  if (img) openLightbox(img.src, img.alt);
 });
 
 startShop().then(async (ok) => {

@@ -134,6 +134,17 @@ footer .admin-link:hover { color: var(--rose); opacity: 1; }
 .order-done { display: grid; gap: 14px; text-align: center; padding-top: 20px; }
 .order-done h3 { font-size: 2.8rem; color: var(--rose-2); letter-spacing: .08em; }
 .order-done p { color: var(--muted); }
+
+/* Foto de producto: tocar para ver en grande */
+.img.zoomable { cursor: zoom-in; position: relative; }
+.img.zoomable::after { content: "🔍"; position: absolute; right: 10px; bottom: 10px; width: 30px; height: 30px; display: grid; place-items: center; background: rgba(255, 255, 255, .88); border-radius: 50%; font-size: .85rem; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.img.zoomable:hover::after, .img.zoomable:focus-visible::after { opacity: 1; }
+.img.zoomable:focus-visible { outline: 3px solid var(--rose); outline-offset: -3px; }
+
+.lightbox { position: fixed; inset: 0; z-index: 90; background: rgba(27, 14, 20, .92); display: grid; place-items: center; padding: 24px; cursor: zoom-out; }
+.lightbox img { max-width: min(92vw, 1100px); max-height: 88vh; object-fit: contain; border-radius: 12px; box-shadow: 0 30px 80px -20px rgba(0, 0, 0, .6); cursor: default; }
+.lightbox-close { position: fixed; top: 20px; right: 20px; z-index: 91; background: rgba(255, 255, 255, .12); border-color: rgba(255, 255, 255, .3); color: #fff; }
+.lightbox-close:hover { background: rgba(255, 255, 255, .22); border-color: rgba(255, 255, 255, .5); color: #fff; }
 .check-line { display: flex; align-items: center; gap: 10px; font-size: .86rem; color: var(--muted); cursor: pointer; }
 .check-line input { width: 16px; height: 16px; accent-color: var(--rose); }
 .delivery-fields { display: grid; gap: 14px; }

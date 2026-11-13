@@ -305,6 +305,27 @@ $("#order-form").addEventListener("submit", async (e) => {
   renderCart();
 });
 
+// ---------- Visor de foto: tocar una foto de producto la muestra en grande ----------
+document.body.insertAdjacentHTML("beforeend", `
+  <div id="lightbox" class="lightbox" hidden>
+    <button id="lightbox-close" class="icon-btn lightbox-close" type="button" aria-label="Cerrar foto">✕</button>
+    <img id="lightbox-img" src="" alt="">
+  </div>`);
+
+function openLightbox(src, alt) {
+  if (!src) return;
+  $("#lightbox-img").src = src;
+  $("#lightbox-img").alt = alt || "";
+  $("#lightbox").hidden = false;
+}
+function closeLightbox() {
+  $("#lightbox").hidden = true;
+  $("#lightbox-img").src = "";
+}
+$("#lightbox").addEventListener("click", (e) => { if (e.target.id === "lightbox") closeLightbox(); });
+$("#lightbox-close").addEventListener("click", closeLightbox);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#lightbox").hidden) closeLightbox(); });
+
 // ---------- Inicio: cada página llama a startShop() cuando está lista ----------
 async function startShop() {
   renderCart();
