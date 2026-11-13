@@ -127,8 +127,13 @@ $("#products").addEventListener("click", (e) => {
   if (!p || soldOut(p)) return;
   const sel = c.querySelector("select.variant");
   if (sel && !sel.value) { sel.classList.add("invalid"); sel.focus(); return; }
-  addToCart(p.id, sel ? sel.value : null);
-  btn.textContent = "Agregado ✓";
+  const key = keyOf(p.id, sel ? sel.value : null);
+  if ((cart[key] || 0) >= maxQtyFor(key)) {
+    btn.textContent = "No hay más existencias";
+  } else {
+    addToCart(p.id, sel ? sel.value : null);
+    btn.textContent = "Agregado ✓";
+  }
   setTimeout(() => (btn.textContent = "Agregar al pedido"), 1200);
 });
 

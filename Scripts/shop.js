@@ -100,6 +100,22 @@ try { cart = JSON.parse(localStorage.getItem("nt-cart") || "{}") || {}; } catch 
 const saveCart = () => { try { localStorage.setItem("nt-cart", JSON.stringify(cart)); } catch (e) {} };
 const keyOf = (pid, vid) => pid + ":" + (vid || 0);
 
+// Existencias disponibles para una línea del carrito (null = sin control de inventario → sin límite salvo MAX_QTY).
+function stockFor(pid, vid) {
+  const p = products.find((x) => String(x.id) === String(pid));
+  if (!p) return 0;
+  if (vid && vid !== "0") {
+    const v = (p.product_variants || []).find((x) => String(x.id) === String(vid));
+    return v ? v.stock : 0;
+  }
+  return p.stock;
+}
+function maxQtyFor(key) {
+  const [pid, vid] = key.split(":");
+  const limit = stockFor(pid, vid === "0" ? null : vid);
+  return limit == null ? MAX_QTY : Math.min(MAX_QTY, Math.max(0, limit));
+}
+
 function resolveLine(key) {
   const [pid, vid] = key.split(":");
   const p = products.find((x) => String(x.id) === pid);
@@ -181,25 +197,29 @@ function renderCart() {
   $("#cart-open").hidden = !ls.length && $("#cart").hidden;
   $("#cart-total").textContent = money(ls.reduce((t, l) => t + l.price * l.qty, 0));
   $("#order-submit").disabled = !ls.length;
-  $("#cart-items").innerHTML = ls.length ? ls.map(({ key, p, v, qty, price }) => `
+  $("#cart-items").innerHTML = ls.length ? ls.map(({ key, p, v, qty, price }) => {
+    const atMax = qty >= maxQtyFor(key);
+    return `
     <div class="cart-line">
       <div>
         <strong>${esc(p.name)}</strong>
         ${v ? `<small class="line-variant">${esc(v.name)}</small>` : ""}
+        ${atMax ? `<small class="line-limit">No hay más existencias</small>` : ""}
       </div>
       <span class="line-price">${money(price * qty)}</span>
       <div class="qty">
         <button type="button" data-act="minus" data-key="${key}" aria-label="Quitar uno">−</button>
         <span>${qty}</span>
-        <button type="button" data-act="plus" data-key="${key}" aria-label="Agregar uno">+</button>
+        <button type="button" data-act="plus" data-key="${key}" aria-label="Agregar uno"${atMax ? " disabled" : ""}>+</button>
         <button type="button" class="remove" data-act="remove" data-key="${key}">Quitar</button>
       </div>
-    </div>`).join("") : `<p class="cart-empty">Tu pedido está vacío.</p>`;
+    </div>`;
+  }).join("") : `<p class="cart-empty">Tu pedido está vacío.</p>`;
 }
 
 function addToCart(pid, vid) {
   const k = keyOf(pid, vid);
-  cart[k] = Math.min((cart[k] || 0) + 1, MAX_QTY);
+  cart[k] = Math.min((cart[k] || 0) + 1, maxQtyFor(k));
   saveCart();
   renderCart();
 }
@@ -215,7 +235,7 @@ $("#cart-items").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-act]");
   if (!btn) return;
   const k = btn.dataset.key;
-  if (btn.dataset.act === "plus") cart[k] = Math.min((cart[k] || 0) + 1, MAX_QTY);
+  if (btn.dataset.act === "plus") cart[k] = Math.min((cart[k] || 0) + 1, maxQtyFor(k));
   if (btn.dataset.act === "minus") cart[k] = (cart[k] || 0) - 1;
   if (btn.dataset.act === "remove" || cart[k] <= 0) delete cart[k];
   saveCart();
@@ -334,7 +354,11 @@ async function startShop() {
   if (error || !data) return false;
   products = data;
   products.forEach((p) => p.product_variants.sort((a, b) => a.id - b.id));
-  Object.keys(cart).forEach((k) => { if (!resolveLine(k)) delete cart[k]; });
+  Object.keys(cart).forEach((k) => {
+    if (!resolveLine(k)) { delete cart[k]; return; }
+    cart[k] = Math.min(cart[k], maxQtyFor(k));
+    if (cart[k] <= 0) delete cart[k];
+  });
   saveCart();
   renderCart();
   return true;

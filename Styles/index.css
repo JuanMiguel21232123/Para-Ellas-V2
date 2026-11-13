@@ -114,6 +114,7 @@ footer .admin-link:hover { color: var(--rose); opacity: 1; }
 .cart-line strong { font: 600 1.15rem var(--serif); }
 .cart-line .line-price { color: var(--rose-2); font-weight: 600; text-align: right; }
 .cart-line .line-variant { display: block; font-size: .8rem; color: var(--muted); }
+.cart-line .line-limit { display: block; font-size: .76rem; color: #c4443d; margin-top: 2px; }
 .qty { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .85rem; }
 .qty button { width: 28px; height: 28px; background: none; border: 1px solid var(--line); border-radius: 50%; color: var(--text); cursor: pointer; transition: .2s; }
 .qty button:hover { border-color: var(--rose); color: var(--rose-2); }
