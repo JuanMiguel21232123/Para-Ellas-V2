@@ -19,6 +19,8 @@ let CATS = {}; // slug → nombre; se llena desde /api/admin/categories
 const EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 const MAX_IMAGE = 50 * 1024 * 1024;
 const TZ = { timeZone: "America/Bogota" };
+// SQLite guarda las fechas en UTC sin zona ("2026-11-30 20:30:00"); sin esto el navegador las lee como hora local (+5 h).
+const dbDate = (s) => new Date(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : String(s).replace(" ", "T") + "Z");
 let me = null, categories = [], editingCat = null, products = [], subs = [], orders = [], expenses = [], settings = {}, editing = null;
 
 function toast(t) {
@@ -56,9 +58,8 @@ showTab("pedidos");
 
 // ---------- Fotos (R2 vía /api/admin/upload) ----------
 // Antes de subir, la foto se reduce (máx. 640 px por lado) y se convierte a WebP.
-// 640px alcanza para verse nítida incluso en pantallas retina, porque en la tienda
-// la foto solo se muestra en tarjetas de catálogo (no hay página de producto con zoom).
-const MAX_SIDE = 640, QUALITY = 0.82;
+// 1000px alcanza para las tarjetas y para el visor "ver en grande" de la tienda.
+const MAX_SIDE = 1000, QUALITY = 0.82;
 
 async function compressImage(file) {
   let bmp;
@@ -145,7 +146,7 @@ const STORE_NAME = "Venta en tienda", STORE_PHONE = "0000000";
 const isStoreSale = (o) => o.delivery_type === "tienda" && o.customer_name === STORE_NAME && o.customer_phone === STORE_PHONE;
 
 function orderCard(o) {
-  const when = new Date(o.created_at).toLocaleString("es-CO", { ...TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  const when = dbDate(o.created_at).toLocaleString("es-CO", { ...TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   const items = (o.order_items || []).map((i) => `<li><span>${i.quantity} × ${esc(i.name)}${i.variant_name ? ` <em>· ${esc(i.variant_name)}</em>` : ""}</span><span>${money(i.price * i.quantity)}</span></li>`).join("");
   const actions = (ORDER_ACTIONS[o.status] || []).map(([s, l]) => `<button type="button" class="${s === "cancelled" ? "danger" : "ok"}" data-id="${o.id}" data-status="${s}">${l}</button>`).join("")
     + `<button type="button" class="danger" data-id="${o.id}" data-del="1">Eliminar</button>`;
@@ -240,7 +241,7 @@ const expenseDate = (e) => new Date(e.spent_at + "T00:00:00");
 
 function renderEarnings() {
   const from = periodStart($("earn-period").value);
-  const done = orders.filter((o) => o.status === "delivered" && new Date(o.status_at) >= from);
+  const done = orders.filter((o) => o.status === "delivered" && dbDate(o.status_at) >= from);
   const total = done.reduce((t, o) => t + o.total, 0);
   $("earn-total").textContent = money(total);
   $("earn-count").textContent = done.length;
@@ -786,7 +787,7 @@ $("products-body").addEventListener("click", async (e) => {
 function stripForUpdate(p) {
   return {
     category: p.category, subcategory_id: p.subcategory_id, name: p.name, description: p.description,
-    price: p.price, image_url: p.image_url, stock: p.stock,
+    price: p.price, image_url: p.image_url, stock: p.stock, variant_label: p.variant_label,
     variants: (p.product_variants || []).map((v) => ({ id: v.id, name: v.name, price: v.price, stock: v.stock, active: !!v.active })),
   };
 }
@@ -830,6 +831,7 @@ function chooseProduct(row, id) {
   if (p && activeVariants(p).length) { vs.innerHTML = variantOptionsHtml(p); vs.hidden = false; price.value = ""; }
   else { vs.hidden = true; vs.innerHTML = ""; price.value = p ? p.price : ""; }
   updateSaleTotal();
+  (vs.hidden ? row.querySelector(".s-qty") : vs).focus();
 }
 
 function variantOptionsHtml(p) {
@@ -924,6 +926,8 @@ $("sale-lines").addEventListener("input", (e) => {
   if (e.target.matches(".s-product-q")) {
     const row = e.target.closest(".sale-row");
     row.querySelector(".s-product").value = "";
+    row.querySelector(".s-price").value = "";
+    row.querySelector(".s-variant").hidden = true;
     openCombo(row, e.target.value);
   }
   if (e.target.matches(".s-qty, .s-price")) updateSaleTotal();
@@ -1050,7 +1054,7 @@ DEFAULTS.color_plum = "#6d2f5a";
 const KEYS = Object.keys(DEFAULTS);
 
 async function loadSettings() {
-  const { data, error } = await api("public/settings");
+  const { data, error } = await api("public/settings", { cache: "no-store" }); // el admin siempre ve lo último, sin caché del navegador
   if (error) return setMsg($("settings-message"), "No se pudo cargar la personalización.", "error");
   settings = data || {};
   fillSettings();

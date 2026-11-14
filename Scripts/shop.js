@@ -256,6 +256,7 @@ const ORDER_ERRORS = {
   invalid: "Algún producto ya no está disponible. Actualiza la página e inténtalo de nuevo.",
   variant: "Algún sabor u opción ya no está disponible. Actualiza la página e inténtalo de nuevo.",
   limit: "Ya tienes varios pedidos pendientes. Espera a que los confirmemos o escríbenos por WhatsApp.",
+  busy: "Estamos recibiendo muchos pedidos en este momento. Escríbenos por WhatsApp para atenderte.",
 };
 
 // ---------- Datos del cliente: se recuerdan en este dispositivo ----------

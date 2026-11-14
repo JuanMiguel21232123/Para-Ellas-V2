@@ -1,4 +1,4 @@
-import { turso, verifyPassword, makeSessionCookie, clearSessionCookie, readSession, deleteImageByUrl } from "../_lib/db.js";
+import { turso, tursoBatch, verifyPassword, makeSessionCookie, clearSessionCookie, readSession, deleteImageByUrl } from "../_lib/db.js";
 
 const json = (data, init = {}) => new Response(JSON.stringify(data), { ...init, headers: { "Content-Type": "application/json", ...(init.headers || {}) } });
 const err = (message, status = 400) => json({ error: message }, { status });
@@ -8,16 +8,57 @@ const catExists = async (env, slug) =>
 const slugify = (t) => String(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30).replace(/-+$/, "");
 
+// ---------- Caché de las lecturas públicas (60 s) ----------
+// Se guarda el resultado en la caché de Cloudflare: las visitas siguientes no tocan Turso.
+// Cada cambio hecho desde el panel admin la borra (purgePublic), así lo nuevo se ve de inmediato.
+const CACHE_TTL = 60;
+const PUBLIC_CACHE = ["products", "categories", "settings", "subs"];
+const cacheKey = (request, name) => new Request(new URL("/__cache/" + name, request.url).href);
+
+async function cachedData(request, ctx, name, produce) {
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const key = cacheKey(request, name);
+  if (cache) {
+    try { const hit = await cache.match(key); if (hit) return await hit.json(); } catch (e) {}
+  }
+  const data = await produce();
+  if (cache) {
+    const put = cache.put(key, new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${CACHE_TTL}` },
+    })).catch(() => {});
+    if (ctx.waitUntil) ctx.waitUntil(put);
+  }
+  return data;
+}
+
+async function purgePublic(request) {
+  if (typeof caches === "undefined") return;
+  await Promise.all(PUBLIC_CACHE.map((n) => caches.default.delete(cacheKey(request, n)).catch(() => {})));
+}
+
+// Respuesta pública cacheable también en el navegador del visitante
+const publicJson = (data) => json(data, { headers: { "Cache-Control": `public, max-age=${CACHE_TTL}` } });
+
 // Un solo archivo decide la ruta leyendo params.path (todo lo que viene después de /api/).
-export async function onRequest({ request, env, params }) {
+export async function onRequest(ctx) {
+  const { request, params } = ctx;
+  let res;
+  try { res = await route(ctx); } catch (e) { res = err("server", 500); } // await: así sí se atrapan los errores de las funciones async
+  // Cualquier cambio exitoso del admin invalida la caché pública
+  if (request.method !== "GET" && (params.path || [])[0] === "admin" && res.status < 400) await purgePublic(request);
+  return res;
+}
+
+async function route(ctx) {
+  const { request, env, params } = ctx;
   const path = (params.path || []).join("/");
   const method = request.method;
   try {
     // ---------- Público ----------
-    if (path === "public/products" && method === "GET") return getProducts(env);
-    if (path === "public/subs" && method === "GET") return getSubs(request, env);
-    if (path === "public/categories" && method === "GET") return getCategories(env);
-    if (path === "public/settings" && method === "GET") return getSettings(env);
+    if (path === "public/products" && method === "GET") return getProducts(request, env, ctx);
+    if (path === "public/subs" && method === "GET") return getSubs(request, env, ctx);
+    if (path === "public/categories" && method === "GET") return getCategories(request, env, ctx);
+    if (path === "public/settings" && method === "GET") return getSettings(request, env, ctx);
     if (path === "login" && method === "POST") return login(request, env);
     if (path === "session" && method === "GET") return getSession(request, env);
     if (path === "session" && method === "DELETE") return json(null, { headers: { "Set-Cookie": clearSessionCookie() } });
@@ -78,39 +119,62 @@ async function requireAdmin(request, env) {
 // =====================================================================
 // PÚBLICO
 // =====================================================================
-async function getProducts(env) {
-  const { rows: products } = await turso(env,
-    "SELECT id, category, subcategory_id, name, description, price, image_url, stock, variant_label FROM products WHERE active = 1 ORDER BY created_at DESC");
-  const { rows: variants } = await turso(env,
-    "SELECT id, product_id, name, price, stock FROM product_variants WHERE active = 1 ORDER BY id");
-  const byProduct = {};
-  variants.forEach((v) => (byProduct[v.product_id] ||= []).push({
-    id: v.id, name: v.name, price: v.price, active: true, stock: v.stock, sold_out: v.stock != null && v.stock <= 0,
-  }));
-  return json(products.map((p) => ({
-    id: p.id, category: p.category, subcategory_id: p.subcategory_id, name: p.name, description: p.description,
-    price: p.price, image_url: p.image_url, stock: p.stock, sold_out: p.stock != null && p.stock <= 0, variant_label: p.variant_label || null,
-    product_variants: byProduct[p.id] || [],
-  })));
+async function getProducts(request, env, ctx) {
+  const data = await cachedData(request, ctx, "products", async () => {
+    const [{ rows: products }, { rows: variants }] = await tursoBatch(env, [
+      ["SELECT id, category, subcategory_id, name, description, price, image_url, stock, variant_label FROM products WHERE active = 1 ORDER BY created_at DESC"],
+      ["SELECT id, product_id, name, price, stock FROM product_variants WHERE active = 1 ORDER BY id"],
+    ]);
+    const byProduct = {};
+    variants.forEach((v) => (byProduct[v.product_id] ||= []).push({
+      id: v.id, name: v.name, price: v.price, active: true, stock: v.stock, sold_out: v.stock != null && v.stock <= 0,
+    }));
+    return products.map((p) => ({
+      id: p.id, category: p.category, subcategory_id: p.subcategory_id, name: p.name, description: p.description,
+      price: p.price, image_url: p.image_url, stock: p.stock, sold_out: p.stock != null && p.stock <= 0, variant_label: p.variant_label || null,
+      product_variants: byProduct[p.id] || [],
+    }));
+  });
+  return publicJson(data);
 }
 
-async function getSubs(request, env) {
+async function getSubs(request, env, ctx) {
   const cat = new URL(request.url).searchParams.get("c") || "";
-  const { rows } = await turso(env,
-    "SELECT id, name, sort_order FROM subcategories WHERE category = ? AND active = 1 ORDER BY sort_order, id", [cat]);
-  return json(rows);
+  // Se cachean todas las subsecciones juntas y aquí se filtra la colección pedida
+  const all = await cachedData(request, ctx, "subs", async () =>
+    (await turso(env, "SELECT id, name, sort_order, category FROM subcategories WHERE active = 1 ORDER BY sort_order, id")).rows);
+  return publicJson(all.filter((s) => s.category === cat).map(({ id, name, sort_order }) => ({ id, name, sort_order })));
 }
 
-async function getSettings(env) {
-  const { rows } = await turso(env, "SELECT key, value FROM site_settings");
-  return json(Object.fromEntries(rows.map((r) => [r.key, r.value])));
+async function getSettings(request, env, ctx) {
+  const data = await cachedData(request, ctx, "settings", async () => {
+    const { rows } = await turso(env, "SELECT key, value FROM site_settings");
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  });
+  return publicJson(data);
 }
+
+// Bloqueo del login: 5 claves incorrectas desde la misma IP → 15 minutos de espera.
+// La tabla login_attempts se crea sola la primera vez (no hay que hacer nada en Turso).
+const LOGIN_MAX_FAILS = 5, LOGIN_WINDOW = "-15 minutes";
 
 async function login(request, env) {
+  const ip = request.headers.get("CF-Connecting-IP") || "desconocida";
+  const res = await tursoBatch(env, [
+    ["CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT NOT NULL, at TEXT NOT NULL DEFAULT (datetime('now')))"],
+    ["DELETE FROM login_attempts WHERE at < datetime('now', ?)", [LOGIN_WINDOW]],
+    ["SELECT COUNT(*) AS n FROM login_attempts WHERE ip = ?", [ip]],
+  ]);
+  if ((res[2].rows[0]?.n || 0) >= LOGIN_MAX_FAILS) return err("Demasiados intentos. Espera 15 minutos e inténtalo de nuevo.", 429);
+
   const { email, password } = await request.json().catch(() => ({}));
   const { rows } = await turso(env, "SELECT id, name, password_hash FROM admins WHERE email = ?", [String(email || "").trim().toLowerCase()]);
   const admin = rows[0];
-  if (!admin || !(await verifyPassword(password || "", admin.password_hash))) return err("Correo o contraseña incorrectos.", 401);
+  if (!admin || !(await verifyPassword(password || "", admin.password_hash))) {
+    await turso(env, "INSERT INTO login_attempts (ip) VALUES (?)", [ip]);
+    return err("Correo o contraseña incorrectos.", 401);
+  }
+  await turso(env, "DELETE FROM login_attempts WHERE ip = ?", [ip]);
   return json({ name: admin.name }, { headers: { "Set-Cookie": await makeSessionCookie(env, admin.id) } });
 }
 
@@ -124,6 +188,7 @@ async function getSession(request, env) {
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sin O/0/I/1
 const genCode = () => Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
 const PENDING_LIMIT = 3; // pedidos "pending" simultáneos permitidos por teléfono
+const PENDING_TOTAL_LIMIT = 30; // pedidos "pending" simultáneos en toda la tienda (sube este número si algún día se queda corto)
 
 async function uniqueCode(env) {
   let code = genCode();
@@ -133,6 +198,57 @@ async function uniqueCode(env) {
     code = genCode();
   }
   return code;
+}
+
+const MAX_LINES = 60; // líneas máximas por pedido o venta
+const toId = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
+const placeholders = (a) => a.map(() => "?").join(",");
+
+// Busca de una vez (2 consultas en 1 llamada) todos los productos y variantes de un pedido.
+// Devuelve { lines } o { error }. `price` queda con el precio de la tienda (variante o producto).
+async function resolveLines(env, items, { requireActive }) {
+  const pids = [...new Set(items.map((it) => toId(it?.id)))];
+  if (pids.includes(null)) return { error: "invalid" };
+  const vids = [...new Set(items.filter((it) => it.variant_id).map((it) => toId(it.variant_id)))];
+  if (vids.includes(null)) return { error: "variant" };
+  const [pr, vr] = await tursoBatch(env, [
+    [`SELECT id, name, category, price, active FROM products WHERE id IN (${placeholders(pids)})`, pids],
+    [`SELECT id, product_id, name, price, active FROM product_variants WHERE id IN (${vids.length ? placeholders(vids) : "NULL"})`, vids],
+  ]);
+  const prods = new Map(pr.rows.map((r) => [r.id, r]));
+  const vars = new Map(vr.rows.map((r) => [r.id, r]));
+  const lines = [];
+  for (const it of items) {
+    const p = prods.get(toId(it.id));
+    if (!p || (requireActive && !p.active)) return { error: "invalid" };
+    let v = null;
+    if (it.variant_id) {
+      v = vars.get(toId(it.variant_id));
+      if (!v || v.product_id !== p.id || (requireActive && !v.active)) return { error: "variant" };
+    }
+    const qty = Math.max(1, Math.min(20, Number(it.qty) || 1));
+    lines.push({
+      product_id: p.id, variant_id: v ? v.id : null, name: p.name, category: p.category,
+      variant_name: v ? v.name : null, price: v && v.price != null ? v.price : p.price, qty,
+    });
+  }
+  return { lines };
+}
+
+// Consultas que crean el pedido y sus líneas (se ejecutan juntas, en una transacción).
+function orderStatements(o, lines) {
+  const stmts = [[
+    `INSERT INTO orders (code, customer_name, customer_phone, delivery_type, address, neighborhood, payment_method, preferred_time, notes, total, status, status_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    [o.code, o.name, o.phone, o.type, o.address ?? null, o.hood ?? null, o.payment ?? null, o.time ?? null, o.notes ?? null, o.total, o.status],
+  ]];
+  for (const l of lines) {
+    stmts.push([
+      "INSERT INTO order_items (order_id, product_id, variant_id, name, variant_name, price, quantity, category) VALUES ((SELECT id FROM orders WHERE code = ? ORDER BY id DESC LIMIT 1), ?, ?, ?, ?, ?, ?, ?)",
+      [o.code, l.product_id, l.variant_id, l.name, l.variant_name, l.price, l.qty, l.category],
+    ]);
+  }
+  return stmts;
 }
 
 async function createOrder(request, env) {
@@ -150,42 +266,24 @@ async function createOrder(request, env) {
   if (!instore && !["efectivo", "nequi"].includes(payment)) return err("payment");
 
   const items = Array.isArray(b.items) ? b.items : [];
-  if (!items.length) return err("items");
+  if (!items.length || items.length > MAX_LINES) return err("items");
 
-  const lines = [];
-  for (const it of items) {
-    const { rows } = await turso(env, "SELECT id, name, category, price, active FROM products WHERE id = ?", [it.id]);
-    const p = rows[0];
-    if (!p || !p.active) return err("invalid");
-    let variantName = null, price = p.price;
-    if (it.variant_id) {
-      const { rows: vr } = await turso(env, "SELECT id, name, price, active FROM product_variants WHERE id = ? AND product_id = ?", [it.variant_id, it.id]);
-      const v = vr[0];
-      if (!v || !v.active) return err("variant");
-      variantName = v.name;
-      price = v.price != null ? v.price : p.price;
-    }
-    const qty = Math.max(1, Math.min(20, Number(it.qty) || 1));
-    lines.push({ product_id: p.id, variant_id: it.variant_id || null, name: p.name, category: p.category, variant_name: variantName, price, qty });
-  }
+  const { lines, error } = await resolveLines(env, items, { requireActive: true });
+  if (error) return err(error);
 
-  const { rows: pending } = await turso(env, "SELECT COUNT(*) AS n FROM orders WHERE customer_phone = ? AND status = 'pending'", [phone]);
-  if ((pending[0]?.n || 0) >= PENDING_LIMIT) return err("limit");
+  const { rows: pending } = await turso(env,
+    "SELECT COUNT(*) AS total, COALESCE(SUM(customer_phone = ?), 0) AS mine FROM orders WHERE status = 'pending'", [phone]);
+  if ((pending[0]?.mine || 0) >= PENDING_LIMIT) return err("limit");
+  if ((pending[0]?.total || 0) >= PENDING_TOTAL_LIMIT) return err("busy"); // freno general contra pedidos en masa
 
   const total = lines.reduce((t, l) => t + l.price * l.qty, 0);
   const code = await uniqueCode(env);
 
-  const { lastInsertRowid: orderId } = await turso(env,
-    `INSERT INTO orders (code, customer_name, customer_phone, delivery_type, address, neighborhood, payment_method, preferred_time, notes, total, status, status_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
-    [code, name, phone, instore ? "tienda" : "domicilio", instore ? null : address, instore ? null : hood,
-      instore ? null : payment, b.time || null, b.notes || null, total]);
-
-  for (const l of lines) {
-    await turso(env,
-      "INSERT INTO order_items (order_id, product_id, variant_id, name, variant_name, price, quantity, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [orderId, l.product_id, l.variant_id, l.name, l.variant_name, l.price, l.qty, l.category]);
-  }
+  await tursoBatch(env, orderStatements({
+    code, name, phone, type: instore ? "tienda" : "domicilio",
+    address: instore ? null : address, hood: instore ? null : hood, payment: instore ? null : payment,
+    time: b.time || null, notes: b.notes || null, total, status: "pending",
+  }, lines), { write: true });
 
   return json({ code, total });
 }
@@ -202,33 +300,34 @@ class StockError extends Error {
 
 // items: [{ product_id, variant_id, name, variant_name, quantity }]
 // sign: -1 descuenta, +1 devuelve
-async function adjustStock(env, items, sign) {
-  // Primero se valida que alcance (solo al descontar); si algo falla, no se toca nada.
-  if (sign < 0) {
-    for (const it of items) {
-      const cur = await currentStock(env, it);
-      if (cur != null && cur + sign * it.quantity < 0) throw new StockError(it.variant_name || it.name);
-    }
-  }
+// Devuelve las consultas UPDATE para ejecutar (junto a otras) en una sola transacción.
+// Al descontar, primero revisa (todo en 1 llamada) que alcance; si algo no alcanza, lanza StockError y no se toca nada.
+async function stockStatements(env, items, sign) {
+  const groups = new Map(); // se suman las líneas repetidas del mismo producto/variante
   for (const it of items) {
-    const cur = await currentStock(env, it);
-    if (cur == null) continue; // sin control de existencias para este producto/variante
-    const next = Math.max(0, cur + sign * it.quantity);
-    if (it.variant_id) await turso(env, "UPDATE product_variants SET stock = ? WHERE id = ?", [next, it.variant_id]);
-    else if (it.product_id) await turso(env, "UPDATE products SET stock = ? WHERE id = ?", [next, it.product_id]);
+    const key = it.variant_id ? "v" + it.variant_id : it.product_id ? "p" + it.product_id : null;
+    if (!key) continue;
+    const g = groups.get(key) || { ...it, quantity: 0 };
+    g.quantity += it.quantity;
+    groups.set(key, g);
   }
-}
-
-async function currentStock(env, it) {
-  if (it.variant_id) {
-    const { rows } = await turso(env, "SELECT stock FROM product_variants WHERE id = ?", [it.variant_id]);
-    return rows[0] ? rows[0].stock : null;
+  const list = [...groups.values()];
+  if (!list.length) return [];
+  if (sign < 0) {
+    const current = await tursoBatch(env, list.map((g) => g.variant_id
+      ? ["SELECT stock FROM product_variants WHERE id = ?", [g.variant_id]]
+      : ["SELECT stock FROM products WHERE id = ?", [g.product_id]]));
+    list.forEach((g, i) => {
+      const cur = current[i].rows[0] ? current[i].rows[0].stock : null; // null = sin control de existencias
+      if (cur != null && cur - g.quantity < 0) throw new StockError(g.variant_name || g.name);
+    });
   }
-  if (it.product_id) {
-    const { rows } = await turso(env, "SELECT stock FROM products WHERE id = ?", [it.product_id]);
-    return rows[0] ? rows[0].stock : null;
-  }
-  return null;
+  return list.map((g) => [
+    g.variant_id
+      ? "UPDATE product_variants SET stock = MAX(0, stock + ?) WHERE id = ? AND stock IS NOT NULL"
+      : "UPDATE products SET stock = MAX(0, stock + ?) WHERE id = ? AND stock IS NOT NULL",
+    [sign * g.quantity, g.variant_id || g.product_id],
+  ]);
 }
 
 // =====================================================================
@@ -257,17 +356,18 @@ async function updateOrderStatus(request, env, id) {
   const wasCommitted = o.status === "confirmed" || o.status === "delivered";
   const willBeCommitted = status === "confirmed" || status === "delivered";
 
+  const stmts = [];
   if (wasCommitted !== willBeCommitted) {
     const { rows: items } = await turso(env, "SELECT product_id, variant_id, name, variant_name, quantity FROM order_items WHERE order_id = ?", [id]);
     try {
-      await adjustStock(env, items, willBeCommitted ? -1 : 1);
+      stmts.push(...(await stockStatements(env, items, willBeCommitted ? -1 : 1)));
     } catch (e) {
       if (e instanceof StockError) return err(`stock:${e.itemName}`);
       throw e;
     }
   }
-
-  await turso(env, "UPDATE orders SET status = ?, status_at = datetime('now') WHERE id = ?", [status, id]);
+  stmts.push(["UPDATE orders SET status = ?, status_at = datetime('now') WHERE id = ?", [status, id]]);
+  await tursoBatch(env, stmts, { write: true }); // existencias + estado: o se aplican las dos o ninguna
   return json({ ok: true });
 }
 
@@ -276,11 +376,13 @@ async function deleteOrder(request, env, id) {
   const { rows } = await turso(env, "SELECT status FROM orders WHERE id = ?", [id]);
   const o = rows[0];
   if (!o) return err("not_found", 404);
+  const stmts = [];
   if (o.status === "confirmed" || o.status === "delivered") {
     const { rows: items } = await turso(env, "SELECT product_id, variant_id, name, variant_name, quantity FROM order_items WHERE order_id = ?", [id]);
-    await adjustStock(env, items, 1);
+    stmts.push(...(await stockStatements(env, items, 1)));
   }
-  await turso(env, "DELETE FROM orders WHERE id = ?", [id]); // order_items se borra en cascada
+  stmts.push(["DELETE FROM orders WHERE id = ?", [id]]); // order_items se borra en cascada
+  await tursoBatch(env, stmts, { write: true });
   return json({ ok: true });
 }
 
@@ -330,10 +432,11 @@ async function deleteSub(request, env, id) {
 // El slug (maquillaje, joyas, ropa…) se genera solo a partir del nombre y
 // no cambia después: es lo que guardan products.category y subcategories.category.
 // =====================================================================
-async function getCategories(env) {
-  const { rows } = await turso(env,
-    "SELECT slug, name, description, accent, variant_label FROM categories WHERE active = 1 ORDER BY sort_order, rowid");
-  return json(rows);
+async function getCategories(request, env, ctx) {
+  const data = await cachedData(request, ctx, "categories", async () =>
+    (await turso(env,
+      "SELECT slug, name, description, accent, variant_label FROM categories WHERE active = 1 ORDER BY sort_order, rowid")).rows);
+  return publicJson(data);
 }
 
 async function getAdminCategories(request, env) {
@@ -420,6 +523,8 @@ async function getAdminProducts(request, env) {
   return json(products.map((p) => ({ ...p, active: !!p.active, product_variants: byProduct[p.id] || [] })));
 }
 
+const MAX_VARIANTS = 300;
+
 async function validProductBody(env, b) {
   if (!(await catExists(env, b.category))) return "data";
   const name = String(b.name || "").trim();
@@ -427,8 +532,20 @@ async function validProductBody(env, b) {
   const price = Number(b.price);
   if (!Number.isInteger(price) || price < 0) return "data";
   if (String(b.variant_label || "").trim().length > 30) return "data";
+  if (b.variants != null) {
+    if (!Array.isArray(b.variants) || b.variants.length > MAX_VARIANTS) return "data";
+    for (const v of b.variants) {
+      const n = typeof v?.name === "string" ? v.name.trim() : "";
+      if (!n || n.length > 80) return "data";
+      if (v.price != null && (!Number.isInteger(Number(v.price)) || Number(v.price) < 0)) return "data";
+      if (v.stock != null && (!Number.isInteger(Number(v.stock)) || Number(v.stock) < 0)) return "data";
+    }
+  }
   return null;
 }
+
+const numOrNull = (x) => (x == null ? null : Number(x));
+const variantArgs = (v) => [v.name.trim(), numOrNull(v.price), numOrNull(v.stock), v.active === false ? 0 : 1];
 
 async function createProduct(request, env) {
   if (!(await requireAdmin(request, env))) return err("auth", 401);
@@ -437,14 +554,23 @@ async function createProduct(request, env) {
   const bad = await validProductBody(env, b);
   if (bad) return err(bad);
 
-  const { lastInsertRowid: id } = await turso(env,
+  const { lastInsertRowid } = await turso(env,
     `INSERT INTO products (category, subcategory_id, name, description, price, image_url, active, stock, variant_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [b.category, b.subcategory_id || null, b.name.trim(), b.description || "", Number(b.price), b.image_url || null,
-      b.active === false ? 0 : 1, b.stock == null ? null : Number(b.stock), String(b.variant_label || "").trim() || null]);
+      b.active === false ? 0 : 1, numOrNull(b.stock), String(b.variant_label || "").trim() || null]);
+  const id = Number(lastInsertRowid);
 
-  for (const v of Array.isArray(b.variants) ? b.variants : []) {
-    await turso(env, "INSERT INTO product_variants (product_id, name, price, stock, active) VALUES (?, ?, ?, ?, ?)",
-      [id, v.name, v.price == null ? null : Number(v.price), v.stock == null ? null : Number(v.stock), v.active === false ? 0 : 1]);
+  const variants = Array.isArray(b.variants) ? b.variants : [];
+  if (variants.length) {
+    try {
+      // Todas las variantes en una sola llamada y una sola transacción
+      await tursoBatch(env, variants.map((v) => [
+        "INSERT INTO product_variants (product_id, name, price, stock, active) VALUES (?, ?, ?, ?, ?)", [id, ...variantArgs(v)],
+      ]), { write: true });
+    } catch (e) {
+      await turso(env, "DELETE FROM products WHERE id = ?", [id]).catch(() => {}); // no dejar el producto a medias
+      throw e;
+    }
   }
   return json({ id });
 }
@@ -456,34 +582,35 @@ async function updateProduct(request, env, id) {
   const bad = await validProductBody(env, b);
   if (bad) return err(bad);
 
-  const { rows: cur } = await turso(env, "SELECT image_url FROM products WHERE id = ?", [id]);
+  const [{ rows: cur }, { rows: existing }] = await tursoBatch(env, [
+    ["SELECT image_url FROM products WHERE id = ?", [id]],
+    ["SELECT id FROM product_variants WHERE product_id = ?", [id]],
+  ]);
   if (!cur.length) return err("not_found", 404);
   const oldImage = cur[0].image_url;
 
-  await turso(env,
+  const incoming = Array.isArray(b.variants) ? b.variants : [];
+  const existingIds = new Set(existing.map((r) => r.id));
+  const keep = new Set(incoming.filter((v) => v.id && existingIds.has(Number(v.id))).map((v) => Number(v.id)));
+  const remove = [...existingIds].filter((x) => !keep.has(x));
+
+  // Producto + todas sus variantes se guardan juntos: o queda todo o no cambia nada.
+  const stmts = [[
     `UPDATE products SET category = ?, subcategory_id = ?, name = ?, description = ?, price = ?, image_url = ?, active = ?, stock = ?, variant_label = ? WHERE id = ?`,
     [b.category, b.subcategory_id || null, b.name.trim(), b.description || "", Number(b.price), b.image_url || null,
-      b.active === false ? 0 : 1, b.stock == null ? null : Number(b.stock), String(b.variant_label || "").trim() || null, id]);
-
-  if (oldImage && oldImage !== (b.image_url || null)) await deleteImageByUrl(env, oldImage);
-
-  const incoming = Array.isArray(b.variants) ? b.variants : [];
-  const { rows: existing } = await turso(env, "SELECT id FROM product_variants WHERE product_id = ?", [id]);
-  const keep = new Set();
+      b.active === false ? 0 : 1, numOrNull(b.stock), String(b.variant_label || "").trim() || null, id],
+  ]];
+  if (remove.length) stmts.push([`DELETE FROM product_variants WHERE product_id = ? AND id IN (${placeholders(remove)})`, [id, ...remove]]);
   for (const v of incoming) {
-    if (v.id && existing.some((r) => r.id === v.id)) {
-      keep.add(v.id);
-      await turso(env, "UPDATE product_variants SET name = ?, price = ?, stock = ?, active = ? WHERE id = ?",
-        [v.name, v.price == null ? null : Number(v.price), v.stock == null ? null : Number(v.stock), v.active === false ? 0 : 1, v.id]);
+    if (v.id && keep.has(Number(v.id))) {
+      stmts.push(["UPDATE product_variants SET name = ?, price = ?, stock = ?, active = ? WHERE id = ? AND product_id = ?", [...variantArgs(v), Number(v.id), id]]);
     } else {
-      const { lastInsertRowid: newId } = await turso(env,
-        "INSERT INTO product_variants (product_id, name, price, stock, active) VALUES (?, ?, ?, ?, ?)",
-        [id, v.name, v.price == null ? null : Number(v.price), v.stock == null ? null : Number(v.stock), v.active === false ? 0 : 1]);
-      keep.add(newId);
+      stmts.push(["INSERT INTO product_variants (product_id, name, price, stock, active) VALUES (?, ?, ?, ?, ?)", [id, ...variantArgs(v)]]);
     }
   }
-  for (const r of existing) if (!keep.has(r.id)) await turso(env, "DELETE FROM product_variants WHERE id = ?", [r.id]);
+  await tursoBatch(env, stmts, { write: true });
 
+  if (oldImage && oldImage !== (b.image_url || null)) await deleteImageByUrl(env, oldImage);
   return json({ ok: true });
 }
 
@@ -506,28 +633,17 @@ async function createSale(request, env) {
   const b = await request.json().catch(() => null);
   if (!b) return err("data");
   const items = Array.isArray(b.items) ? b.items : [];
-  if (!items.length) return err("items");
+  if (!items.length || items.length > MAX_LINES) return err("items");
 
-  const lines = [];
-  for (const it of items) {
-    const { rows } = await turso(env, "SELECT id, name, category FROM products WHERE id = ?", [it.id]);
-    const p = rows[0];
-    if (!p) return err("invalid");
-    let variantName = null;
-    if (it.variant_id) {
-      const { rows: vr } = await turso(env, "SELECT id, name FROM product_variants WHERE id = ? AND product_id = ?", [it.variant_id, it.id]);
-      const v = vr[0];
-      if (!v) return err("variant");
-      variantName = v.name;
-    }
-    const qty = Math.max(1, Math.min(20, Number(it.qty) || 1));
-    const price = Number(it.price);
-    if (!Number.isInteger(price) || price < 0) return err("data");
-    lines.push({ product_id: p.id, variant_id: it.variant_id || null, name: p.name, category: p.category, variant_name: variantName, price, qty });
-  }
+  const prices = items.map((it) => Number(it?.price));
+  const { lines, error } = await resolveLines(env, items, { requireActive: false });
+  if (error) return err(error);
+  if (prices.some((x) => !Number.isInteger(x) || x < 0)) return err("data");
+  lines.forEach((l, i) => { l.price = prices[i]; }); // en tienda se cobra el precio que escribió el admin
 
+  let stock;
   try {
-    await adjustStock(env, lines.map((l) => ({ product_id: l.product_id, variant_id: l.variant_id, name: l.name, variant_name: l.variant_name, quantity: l.qty })), -1);
+    stock = await stockStatements(env, lines.map((l) => ({ product_id: l.product_id, variant_id: l.variant_id, name: l.name, variant_name: l.variant_name, quantity: l.qty })), -1);
   } catch (e) {
     if (e instanceof StockError) return err(`stock:${e.itemName}`);
     throw e;
@@ -537,15 +653,14 @@ async function createSale(request, env) {
   const code = await uniqueCode(env);
   const payment = String(b.payment || "");
 
-  const { lastInsertRowid: orderId } = await turso(env,
-    `INSERT INTO orders (code, customer_name, customer_phone, delivery_type, payment_method, notes, total, status, status_at)
-     VALUES (?, ?, ?, 'tienda', ?, ?, ?, 'delivered', datetime('now'))`,
-    [code, STORE_NAME, STORE_PHONE, ["efectivo", "nequi"].includes(payment) ? payment : null, b.notes || null, total]);
-
-  for (const l of lines) {
-    await turso(env, "INSERT INTO order_items (order_id, product_id, variant_id, name, variant_name, price, quantity, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [orderId, l.product_id, l.variant_id, l.name, l.variant_name, l.price, l.qty, l.category]);
-  }
+  // Descontar existencias + crear la venta y sus líneas: todo en una llamada y una transacción
+  await tursoBatch(env, [
+    ...stock,
+    ...orderStatements({
+      code, name: STORE_NAME, phone: STORE_PHONE, type: "tienda",
+      payment: ["efectivo", "nequi"].includes(payment) ? payment : null, notes: b.notes || null, total, status: "delivered",
+    }, lines),
+  ], { write: true });
   return json({ code, total });
 }
 
@@ -582,12 +697,14 @@ async function deleteExpense(request, env, id) {
 async function updateSettings(request, env) {
   if (!(await requireAdmin(request, env))) return err("auth", 401);
   const { set, delete: del } = await request.json().catch(() => ({}));
+  const stmts = [];
   for (const [key, value] of Object.entries(set || {})) {
-    await turso(env, "INSERT INTO site_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [key, String(value)]);
+    stmts.push(["INSERT INTO site_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [key, String(value)]]);
   }
   for (const key of Array.isArray(del) ? del : []) {
-    await turso(env, "DELETE FROM site_settings WHERE key = ?", [key]);
+    stmts.push(["DELETE FROM site_settings WHERE key = ?", [key]]);
   }
+  if (stmts.length) await tursoBatch(env, stmts, { write: true });
   return json({ ok: true });
 }
 

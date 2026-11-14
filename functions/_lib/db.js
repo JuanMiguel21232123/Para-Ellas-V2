@@ -1,27 +1,58 @@
 // ---------- Turso: ejecuta SQL por su API HTTP (fetch), sin librerías que instalar ----------
 // Necesita TURSO_URL y TURSO_TOKEN (Cloudflare Pages > Settings > Environment variables).
-export async function turso(env, sql, args = []) {
-  const url = env.TURSO_URL.replace(/^libsql:\/\//, "https://") + "/v2/pipeline";
-  const toArg = (v) =>
-    v === null || v === undefined ? { type: "null" }
-    : typeof v === "boolean" ? { type: "integer", value: v ? "1" : "0" }
-    : typeof v === "number" ? { type: Number.isInteger(v) ? "integer" : "float", value: String(v) }
-    : { type: "text", value: String(v) };
-  const res = await fetch(url, {
+// Cloudflare (plan gratis) permite 50 llamadas fetch por petición: por eso hay turso() (1 consulta)
+// y tursoBatch() (muchas consultas en UNA sola llamada).
+const toArg = (v) =>
+  v === null || v === undefined ? { type: "null" }
+  : typeof v === "boolean" ? { type: "integer", value: v ? "1" : "0" }
+  : typeof v === "number" ? { type: Number.isInteger(v) ? "integer" : "float", value: String(v) }
+  : { type: "text", value: String(v) };
+const cellValue = (c) => (c.type === "null" ? null : c.type === "integer" || c.type === "float" ? Number(c.value) : c.value);
+const parseResult = ({ cols, rows, last_insert_rowid, affected_row_count }) => ({
+  rows: rows.map((row) => Object.fromEntries(row.map((c, i) => [cols[i].name, cellValue(c)]))),
+  lastInsertRowid: last_insert_rowid,
+  changes: affected_row_count,
+});
+const pipelineUrl = (env) => env.TURSO_URL.replace(/^libsql:\/\//, "https://") + "/v2/pipeline";
+async function pipeline(env, requests) {
+  const res = await fetch(pipelineUrl(env), {
     method: "POST",
     headers: { Authorization: `Bearer ${env.TURSO_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ requests: [{ type: "execute", stmt: { sql, args: args.map(toArg) } }, { type: "close" }] }),
+    body: JSON.stringify({ requests: [...requests, { type: "close" }] }),
   });
-  const data = await res.json();
+  return res.json();
+}
+
+export async function turso(env, sql, args = []) {
+  const data = await pipeline(env, [{ type: "execute", stmt: { sql, args: args.map(toArg) } }]);
   const r = data.results?.[0];
   if (!r || r.type === "error") throw new Error(r?.error?.message || "Error de Turso");
-  const { cols, rows, last_insert_rowid, affected_row_count } = r.response.result;
-  const value = (c) => (c.type === "null" ? null : c.type === "integer" || c.type === "float" ? Number(c.value) : c.value);
-  return {
-    rows: rows.map((row) => Object.fromEntries(row.map((c, i) => [cols[i].name, value(c)]))),
-    lastInsertRowid: last_insert_rowid,
-    changes: affected_row_count,
-  };
+  return parseResult(r.response.result);
+}
+
+// Varias consultas en UNA llamada. stmts: [[sql, args], ...]  → devuelve [{rows, lastInsertRowid, changes}, ...]
+// { write: true } las envuelve en una transacción: o se aplican todas o ninguna.
+export async function tursoBatch(env, stmts, { write = false } = {}) {
+  if (!stmts.length) return [];
+  const st = (sql, args = []) => ({ sql, args: args.map(toArg) });
+  const steps = [];
+  if (write) {
+    steps.push({ stmt: st("BEGIN") });
+    stmts.forEach(([sql, args], i) => steps.push({ stmt: st(sql, args), condition: { type: "ok", step: i } }));
+    const n = stmts.length;
+    steps.push({ stmt: st("COMMIT"), condition: { type: "ok", step: n } });
+    steps.push({ stmt: st("ROLLBACK"), condition: { type: "not", cond: { type: "ok", step: n + 1 } } });
+  } else {
+    stmts.forEach(([sql, args]) => steps.push({ stmt: st(sql, args) }));
+  }
+  const data = await pipeline(env, [{ type: "batch", batch: { steps } }]);
+  const r = data.results?.[0];
+  if (!r || r.type === "error") throw new Error(r?.error?.message || "Error de Turso");
+  const { step_results: results, step_errors: errors } = r.response.result;
+  const failed = errors.find(Boolean);
+  if (failed) throw new Error(failed.message || "Error de Turso");
+  const out = write ? results.slice(1, 1 + stmts.length) : results;
+  return out.map((x) => parseResult(x));
 }
 
 // ---------- Contraseñas: PBKDF2 con Web Crypto, sin librerías externas ----------
