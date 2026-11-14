@@ -800,15 +800,36 @@ $("filter-category").addEventListener("change", renderProducts);
 const activeVariants = (p) => (p.product_variants || []).filter((v) => v.active);
 const unitOf = (p, v) => (v && v.price != null ? v.price : p.price);
 
-function productOptionsHtml(selected) {
-  const sorted = [...products].sort((a, b) => a.name.localeCompare(b.name, "es"));
-  const groups = Object.entries(CATS).map(([k, label]) => {
-    const list = sorted.filter((p) => p.category === k);
-    if (!list.length) return "";
-    return `<optgroup label="${esc(label)}">${list.map((p) =>
-      `<option value="${p.id}"${String(p.id) === String(selected) ? " selected" : ""}>${esc(p.name)}${p.active ? "" : " (oculto)"}</option>`).join("")}</optgroup>`;
-  }).join("");
-  return `<option value="">Selecciona producto</option>` + groups;
+// Buscador de producto: escribes unas letras y filtra entre todos (sirve igual con 50 o 5000).
+const normTxt = (s) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+function matchProducts(q) {
+  const n = normTxt(q).trim();
+  if (!n) return [];
+  return products.filter((p) => normTxt(p.name).includes(n)).sort((a, b) => a.name.localeCompare(b.name, "es")).slice(0, 50);
+}
+
+function comboListHtml(list, hasQuery) {
+  if (!list.length) return `<div class="combo-empty">${hasQuery ? "Sin resultados" : "Escribe el nombre del producto…"}</div>`;
+  return list.map((p) => `<div class="combo-item" data-id="${p.id}" role="option">
+    <span>${esc(p.name)}${p.active ? "" : " (oculto)"}</span><small>${esc(CATS[p.category] || "")}</small></div>`).join("");
+}
+
+function openCombo(row, q) {
+  row.querySelector(".combo-list").innerHTML = comboListHtml(matchProducts(q), q.trim().length > 0);
+  row.querySelector(".combo-list").hidden = false;
+}
+const closeCombo = (row) => (row.querySelector(".combo-list").hidden = true);
+
+function chooseProduct(row, id) {
+  const p = products.find((x) => String(x.id) === String(id));
+  row.querySelector(".s-product").value = id;
+  row.querySelector(".s-product-q").value = p ? p.name : "";
+  closeCombo(row);
+  const vs = row.querySelector(".s-variant"), price = row.querySelector(".s-price");
+  if (p && activeVariants(p).length) { vs.innerHTML = variantOptionsHtml(p); vs.hidden = false; price.value = ""; }
+  else { vs.hidden = true; vs.innerHTML = ""; price.value = p ? p.price : ""; }
+  updateSaleTotal();
 }
 
 function variantOptionsHtml(p) {
@@ -820,7 +841,11 @@ function addSaleRow() {
   const div = document.createElement("div");
   div.className = "sale-row";
   div.innerHTML = `
-    <select class="s-product" aria-label="Producto">${productOptionsHtml()}</select>
+    <div class="combo">
+      <input type="text" class="s-product-q" placeholder="Busca un producto…" autocomplete="off" aria-label="Producto">
+      <input type="hidden" class="s-product">
+      <div class="combo-list" hidden></div>
+    </div>
     <select class="s-variant" aria-label="Sabor o variante" hidden></select>
     <input type="number" class="s-qty" min="1" max="20" step="1" value="1" inputmode="numeric" aria-label="Cantidad">
     <input type="number" class="s-price" min="0" step="1" inputmode="numeric" placeholder="Precio c/u" aria-label="Precio cobrado por unidad">
@@ -833,10 +858,9 @@ function refreshSale() {
   const rows = document.querySelectorAll("#sale-lines .sale-row");
   if (!rows.length) { addSaleRow(); return; }
   rows.forEach((r) => {
-    const sel = r.querySelector(".s-product");
-    sel.innerHTML = productOptionsHtml(sel.value);
-    const p = products.find((x) => String(x.id) === sel.value);
+    const p = products.find((x) => String(x.id) === r.querySelector(".s-product").value);
     if (!p) { r.querySelector(".s-variant").hidden = true; return; }
+    r.querySelector(".s-product-q").value = p.name + (p.active ? "" : " (oculto)");
     const vs = r.querySelector(".s-variant"), cur = vs.value;
     if (activeVariants(p).length) { vs.innerHTML = variantOptionsHtml(p); vs.value = cur; }
   });
@@ -851,9 +875,11 @@ function updateSaleTotal() {
   $("sale-total").textContent = money(total);
 }
 
-$("sale-add").addEventListener("click", () => addSaleRow().querySelector(".s-product").focus());
+$("sale-add").addEventListener("click", () => addSaleRow().querySelector(".s-product-q").focus());
 
 $("sale-lines").addEventListener("click", (e) => {
+  const item = e.target.closest(".combo-item");
+  if (item) return chooseProduct(item.closest(".sale-row"), item.dataset.id);
   const b = e.target.closest(".v-remove");
   if (!b) return;
   b.closest(".sale-row").remove();
@@ -861,42 +887,57 @@ $("sale-lines").addEventListener("click", (e) => {
   updateSaleTotal();
 });
 
+$("sale-lines").addEventListener("focusin", (e) => {
+  if (e.target.matches(".s-product-q")) openCombo(e.target.closest(".sale-row"), e.target.value);
+});
+document.addEventListener("click", (e) => {
+  document.querySelectorAll("#sale-lines .combo").forEach((c) => { if (!c.contains(e.target)) c.querySelector(".combo-list").hidden = true; });
+});
+
+$("sale-lines").addEventListener("keydown", (e) => {
+  if (!e.target.matches(".s-product-q")) return;
+  const row = e.target.closest(".sale-row"), list = row.querySelector(".combo-list");
+  const items = [...list.querySelectorAll(".combo-item")];
+  let idx = items.findIndex((i) => i.classList.contains("active"));
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    if (idx >= 0) items[idx].classList.remove("active");
+    idx = e.key === "ArrowDown" ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
+    if (items[idx]) { items[idx].classList.add("active"); items[idx].scrollIntoView({ block: "nearest" }); }
+  } else if (e.key === "Enter" && idx >= 0) {
+    e.preventDefault();
+    chooseProduct(row, items[idx].dataset.id);
+  } else if (e.key === "Escape") closeCombo(row);
+});
+
 $("sale-lines").addEventListener("change", (e) => {
   const row = e.target.closest(".sale-row");
-  if (!row) return;
-  e.target.classList.remove("invalid");
-  const vs = row.querySelector(".s-variant"), price = row.querySelector(".s-price");
+  if (!row || !e.target.matches(".s-variant")) return;
   const p = products.find((x) => String(x.id) === row.querySelector(".s-product").value);
-  if (e.target.matches(".s-product")) {
-    if (p && activeVariants(p).length) {
-      vs.innerHTML = variantOptionsHtml(p);
-      vs.hidden = false;
-      price.value = "";
-    } else {
-      vs.hidden = true;
-      vs.innerHTML = "";
-      price.value = p ? p.price : "";
-    }
-  } else if (e.target.matches(".s-variant") && p) {
-    const v = activeVariants(p).find((x) => String(x.id) === vs.value);
-    price.value = v ? unitOf(p, v) : "";
-  }
+  const v = p && activeVariants(p).find((x) => String(x.id) === e.target.value);
+  row.querySelector(".s-price").value = v ? unitOf(p, v) : "";
+  e.target.classList.remove("invalid");
   updateSaleTotal();
 });
 $("sale-lines").addEventListener("input", (e) => {
   e.target.classList.remove("invalid");
+  if (e.target.matches(".s-product-q")) {
+    const row = e.target.closest(".sale-row");
+    row.querySelector(".s-product").value = "";
+    openCombo(row, e.target.value);
+  }
   if (e.target.matches(".s-qty, .s-price")) updateSaleTotal();
 });
 
 function readSale() {
   const items = [];
   for (const r of document.querySelectorAll("#sale-lines .sale-row")) {
-    const sp = r.querySelector(".s-product"), sv = r.querySelector(".s-variant");
+    const sp = r.querySelector(".s-product"), spq = r.querySelector(".s-product-q"), sv = r.querySelector(".s-variant");
     const sq = r.querySelector(".s-qty"), sprice = r.querySelector(".s-price");
     if (!sp.value && !sprice.value.trim()) continue;
     const fail = (el, msg) => { el.classList.add("invalid"); el.focus(); throw new Error(msg); };
     const p = products.find((x) => String(x.id) === sp.value);
-    if (!p) fail(sp, "Elige el producto en cada línea.");
+    if (!p) fail(spq, "Elige el producto en cada línea.");
     const needsVariant = activeVariants(p).length > 0;
     if (needsVariant && !sv.value) fail(sv, `Elige la opción de "${p.name}".`);
     const qty = Number(sq.value);

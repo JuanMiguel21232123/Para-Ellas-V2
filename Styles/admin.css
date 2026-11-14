@@ -188,7 +188,12 @@ input[type="color"] { height: 46px; padding: 4px; cursor: pointer; }
 /* ---------- Venta en tienda ---------- */
 .sale-lines { display: grid; gap: 10px; margin: 18px 0 12px; }
 .sale-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.sale-row .s-product { flex: 2 1 220px; width: auto; }
+.sale-row .combo { position: relative; flex: 2 1 220px; }
+.combo-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5; max-height: 260px; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 34px -18px rgba(94, 48, 70, .5); }
+.combo-item { display: flex; justify-content: space-between; gap: 10px; padding: 9px 13px; font-size: .9rem; cursor: pointer; }
+.combo-item small { flex-shrink: 0; color: var(--muted); font-size: .76rem; }
+.combo-item:hover, .combo-item.active { background: color-mix(in srgb, var(--rose) 10%, var(--surface)); }
+.combo-empty { padding: 14px; text-align: center; color: var(--muted); font-size: .85rem; }
 .sale-row .s-variant { flex: 1.5 1 180px; width: auto; }
 .sale-row .s-qty { flex: 0 0 80px; width: 80px; }
 .sale-row .s-price { flex: 0 0 140px; width: 140px; }
